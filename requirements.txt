@@ -1,0 +1,8 @@
+pyTelegramBotAPI
+google-generativeai
+requests
+edge-tts
+asyncio
+certifi
+flask
+gunicorn

@@ -19,7 +19,7 @@ YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 
 # --- НАСТРОЙКИ ---
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"

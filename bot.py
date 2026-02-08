@@ -9,7 +9,7 @@ import random
 import asyncio
 import edge_tts
 from flask import Flask, request
-from datetime import datetime # Нужно для календаря
+from datetime import datetime
 
 # --- КЛЮЧИ ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -17,7 +17,11 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 
-# --- КОНФИГУРАЦИЯ ---
+# --- НАСТРОЙКИ ---
+# 📅 ВАЖНО: Дата начала отсчета (год, месяц, день). 
+# Сегодняшний день будет №0 (первая строка файла).
+START_DATE = datetime(2026, 2, 8) 
+
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest') 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -25,27 +29,9 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
 headers = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
-# --- АТМОСФЕРНЫЕ СТАТУСЫ ---
-VIKING_PHRASES_START = [
-    "🍺 Скальд настраивает струны...",
-    "🦅 Хугин и Мунин полетели за новостями...",
-    "🔥 Руны брошены. Смотрим в бездну...",
-    "⚡ Тор заносит молот...",
-    "🌲 Иггдрасиль шепчет...",
-    "🛡️ Хеймдалль трубит в рог...",
-    "🕯️ Норны прядут нить судьбы..."
-]
+# --- ПРОМПТЫ ---
+SYSTEM_PROMPT_TOPIC_GEN = "Ты — знаток мифов. Придумай одну редкую тему скандинавского фольклора. Только заголовок."
 
-# --- ПРОМПТЫ (ТВОИ ЛЮБИМЫЕ) ---
-
-# 1. Запасной генератор (если файл кончится)
-SYSTEM_PROMPT_TOPIC_GEN = """
-Ты — эрудированный знаток Скандинавской мифологии.
-Придумай ОДНУ редкую, мистическую тему для рассказа.
-Выведи ТОЛЬКО заголовок.
-"""
-
-# 2. Текст (Монументальный)
 SYSTEM_PROMPT_TEXT = """
 Ты — скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (минимум 7000 знаков).
 ПРАВИЛА ОФОРМЛЕНИЯ:
@@ -62,7 +48,6 @@ SYSTEM_PROMPT_TEXT = """
 Тема:
 """
 
-# 3. Голос (Коротко)
 SYSTEM_PROMPT_VOICE = """
 Напиши ОЧЕНЬ КОРОТКОЕ, атмосферное вступление к этой теме (максимум 3 предложения).
 Стиль: старый мудрец рассказывает легенду у костра.
@@ -75,51 +60,67 @@ SYSTEM_PROMPT_IMAGE = "Cinematic digital art, epic Norse mythology scene, dramat
 def clean_text(text):
     return text.replace("**", "").replace("__", "").replace("##", "").replace("* ", "- ")
 
-def send_long_message(chat_id, text):
-    if len(text) > 4000:
-        for x in range(0, len(text), 4000):
-            bot.send_message(chat_id, text[x:x+4000])
-            time.sleep(1)
-    else:
-        bot.send_message(chat_id, text)
+# 🧠 Умная нарезка текста (чтобы не рвать слова)
+def smart_split_and_send(chat_id, text):
+    chunk_size = 4000
+    while text:
+        if len(text) <= chunk_size:
+            bot.send_message(chat_id, text)
+            break
+        
+        # Ищем ближайший перенос строки или пробел перед лимитом
+        split_at = text.rfind('\n', 0, chunk_size)
+        if split_at == -1:
+            split_at = text.rfind(' ', 0, chunk_size)
+        
+        if split_at == -1: # Если совсем нет пробелов (редко), режем жестко
+            split_at = chunk_size
+            
+        chunk = text[:split_at]
+        bot.send_message(chat_id, chunk)
+        
+        # Убираем отправленное + перенос строки
+        text = text[split_at:].lstrip()
+        time.sleep(1) # Даем Телеграму выдохнуть
 
 async def generate_voice_file(text, filename):
     communicate = edge_tts.Communicate(text, "ru-RU-DmitryNeural")
     await communicate.save(filename)
 
-# --- НОВАЯ ЛОГИКА: ВЫБОР ПО ПОРЯДКУ ---
 def get_topic():
-    # 1. Пробуем взять из файла topics.txt
+    # 1. Считаем дни от даты запуска
+    now = datetime.now()
+    delta = now - START_DATE
+    day_index = delta.days 
+    
+    # Если вдруг дата запуска в будущем (ошибка настройки), ставим 0
+    if day_index < 0: day_index = 0
+
     if os.path.exists("topics.txt"):
         try:
             with open("topics.txt", "r", encoding="utf-8") as f:
                 lines = [line.strip() for line in f if line.strip()]
             
             if lines:
-                # Магия календаря: 
-                # Берем номер дня в году (сегодня, например, 40-й день)
-                # И берем соответствующую строчку.
-                # Если список кончится, он начнет сначала (оператор %)
-                day_of_year = datetime.now().timetuple().tm_yday
-                index = (day_of_year) % len(lines)
-                
-                topic = lines[index]
-                return topic, f"📜 Из свитков (Строка {index+1})"
+                # Берем тему по порядку. Если список кончился — идем по кругу.
+                real_index = day_index % len(lines)
+                topic = lines[real_index]
+                return topic, f"📜 Свиток №{real_index + 1} (из {len(lines)})"
         except Exception as e:
-            print(f"Ошибка чтения файла: {e}")
+            print(f"Ошибка файла: {e}")
     
-    # 2. Если файла нет — генерируем AI
+    # Если файла нет
     response = model.generate_content(SYSTEM_PROMPT_TOPIC_GEN)
-    return response.text.strip(), "🔮 Руны подсказали (AI)"
+    return response.text.strip(), "🔮 Руны AI"
 
 def process_topic():
     try:
         topic, source_msg = get_topic()
         
-        status = random.choice(VIKING_PHRASES_START)
-        bot.send_message(YOUR_CHAT_ID, f"{status}\n\n{source_msg}\nТема: {topic}")
+        # 1. Приветствие (без картинки пока)
+        bot.send_message(YOUR_CHAT_ID, f"🔥 Ритуал начат...\n\n{source_msg}\nТема: {topic}")
 
-        # Картинка
+        # 2. Картинка (Gemini улучшает промпт)
         try:
             img_prompt = model.generate_content(f"Describe this Norse myth for Stable Diffusion AI image generator. English only. Myth: {topic}").text
         except:
@@ -129,7 +130,7 @@ def process_topic():
         if response_img.status_code == 200:
             bot.send_photo(YOUR_CHAT_ID, response_img.content)
 
-        # Голос
+        # 3. Голос
         voice_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} Тема: {topic}").text)
         filename = f"voice_{random.randint(1,9999)}.mp3"
         asyncio.run(generate_voice_file(voice_text, filename))
@@ -137,42 +138,54 @@ def process_topic():
             bot.send_voice(YOUR_CHAT_ID, audio)
         os.remove(filename)
 
-        # Текст
+        # 4. Текст (Умная отправка)
         bot.send_chat_action(YOUR_CHAT_ID, 'typing')
         story = clean_text(model.generate_content(f"{SYSTEM_PROMPT_TEXT} {topic}").text)
-        send_long_message(YOUR_CHAT_ID, story)
+        smart_split_and_send(YOUR_CHAT_ID, story)
 
     except Exception as e:
-        bot.send_message(YOUR_CHAT_ID, f"⚠️ Локи строит козни (Ошибка): {e}")
+        bot.send_message(YOUR_CHAT_ID, f"⚠️ Ошибка скальда: {e}")
         print(f"Error: {e}")
 
 # --- ОБРАБОТЧИКИ ---
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    # Кнопка одна, чтобы не путаться
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"))
-    bot.send_message(message.chat.id, "⚔️ Мои свитки полны историй. Нажми кнопку!", reply_markup=markup)
+    bot.send_message(message.chat.id, "⚔️ Добро пожаловать в Вальхаллу знаний.", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "📜 Расскажи Сагу")
 def on_click(message):
+    # Защита от спама кнопкой (простая)
+    bot.send_message(message.chat.id, "⏳ Секунду...")
     process_topic()
 
 # --- WEB SERVER ---
 server = Flask(__name__)
 @server.route("/")
 def webhook():
-    return "Bot is running", 200
+    return "OK", 200
 
 def run_web_server():
     server.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 def schedule_loop():
     while True:
+        # Авто-пост раз в 24 часа
         time.sleep(86400)
         process_topic()
 
 if __name__ == "__main__":
+    # 🧹 ЧИСТКА: Удаляем старые вебхуки, чтобы не было конфликтов 409
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except:
+        pass
+
     threading.Thread(target=run_web_server, daemon=True).start()
     threading.Thread(target=schedule_loop, daemon=True).start()
-    print("🚀 Бот запущен!")
+    
+    print("🚀 Бот перезапущен и очищен!")
     bot.infinity_polling()

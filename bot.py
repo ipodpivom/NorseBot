@@ -18,7 +18,7 @@ HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 
 # --- НАСТРОЙКИ ---
-START_DATE = datetime(2026, 2, 8) # Дата начала отсчета списка
+START_DATE = datetime(2026, 2, 8) 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest') 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -26,30 +26,28 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
 headers = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
-# --- АТМОСФЕРНЫЕ ФРАЗЫ ---
+# --- ФРАЗЫ ---
 WAIT_PHRASES = [
-    "🦅 Хугин и Мунин уже полетели за этой историей...",
-    "⏳ Норны сплетают нить судьбы, жди...",
+    "🦅 Хугин и Мунин полетели за историей...",
+    "⏳ Норны сплетают нить, жди...",
     "🍺 Скальд наливает мёд поэзии...",
-    "🌲 Слушаю шепот ветвей Иггдрасиля...",
-    "🔥 Раздуваю угли в очаге знаний...",
-    "👁️ Один вглядывается в колодец Мимира..."
+    "🌲 Шепот ветвей Иггдрасиля...",
+    "🔥 Раздуваю угли знаний..."
 ]
 
 START_PHRASES = [
     "⚔️ Руны легли верно!",
-    "⚡ Тор ударил молотом — слушай!",
-    "📜 Сдуваю вековую пыль со свитков...",
-    "🐺 Фенрир завыл, предвещая великий рассказ...",
-    "🌊 Драккар причалил к берегам памяти...",
-    "🛡️ Хеймдалль протрубил в Гьяллархорн!"
+    "⚡ Тор ударил молотом!",
+    "📜 Сдуваю пыль со свитков...",
+    "🐺 Фенрир завыл..."
 ]
 
 # --- ПРОМПТЫ ---
 SYSTEM_PROMPT_TOPIC_GEN = "Ты знаток мифов. Придумай одну редкую тему скандинавского фольклора. Только заголовок."
-SYSTEM_PROMPT_TEXT = "Ты скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (минимум 7000 знаков). Структура: 1. ЭТИМОЛОГИЯ, 2. МИФ, 3. СИМВОЛИЗМ, 4. СОВРЕМЕННОСТЬ. Не используй жирный шрифт. Тема: "
+SYSTEM_PROMPT_TEXT = "Ты скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (минимум 6000 знаков). Структура: 1. ЭТИМОЛОГИЯ, 2. МИФ, 3. СИМВОЛИЗМ, 4. СОВРЕМЕННОСТЬ. Не используй жирный шрифт. Тема: "
 SYSTEM_PROMPT_VOICE = "Напиши атмосферное вступление (2-3 предложения) от лица старого викинга. На русском."
 SYSTEM_PROMPT_IMAGE = "Cinematic digital art, epic Norse mythology scene, dramatic lighting, 8k. Topic: "
+SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь смертному мудро, кратко (4 предл.), метафорично, используя образы рун и богов. Не давай скучных советов. Вопрос: "
 
 # --- ФУНКЦИИ ---
 def clean_text(text):
@@ -73,63 +71,73 @@ async def generate_voice_file(text, filename):
     await communicate.save(filename)
 
 def get_topic():
-    # Считаем дни от запуска
     day_index = (datetime.now() - START_DATE).days
     if day_index < 0: day_index = 0
-    
     if os.path.exists("topics.txt"):
         try:
             with open("topics.txt", "r", encoding="utf-8") as f:
                 lines = [l.strip() for l in f if l.strip()]
-            if lines: 
-                # Берем тему по порядку
-                return lines[day_index % len(lines)], f"📜 Свиток №{day_index % len(lines) + 1}"
+            if lines: return lines[day_index % len(lines)], f"📜 Свиток №{day_index % len(lines) + 1}"
         except: pass
-    
     return model.generate_content(SYSTEM_PROMPT_TOPIC_GEN).text.strip(), "🔮 Руны AI"
+
+# --- ОБРАБОТЧИКИ ---
+def get_main_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    btn1 = types.KeyboardButton("📜 Расскажи Сагу")
+    btn2 = types.KeyboardButton("🔮 Спросить Одина")
+    markup.add(btn1, btn2)
+    return markup
 
 def process_topic():
     try:
         topic, src = get_topic()
+        bot.send_message(YOUR_CHAT_ID, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
         
-        # Случайная фраза начала
-        start_msg = random.choice(START_PHRASES)
-        bot.send_message(YOUR_CHAT_ID, f"{start_msg}\n\n{src}\nТема: {topic}")
-        
-        # Картинка
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
         resp = requests.post(API_URL, headers=headers, json={"inputs": img_p})
         if resp.status_code == 200: bot.send_photo(YOUR_CHAT_ID, resp.content)
 
-        # Голос
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,99)}.mp3"
         asyncio.run(generate_voice_file(v_text, fname))
         with open(fname, 'rb') as a: bot.send_voice(YOUR_CHAT_ID, a)
         os.remove(fname)
 
-        # Текст
         bot.send_chat_action(YOUR_CHAT_ID, 'typing')
         story = clean_text(model.generate_content(f"{SYSTEM_PROMPT_TEXT} {topic}").text)
         smart_split_and_send(YOUR_CHAT_ID, story)
-        
     except Exception as e:
-        bot.send_message(YOUR_CHAT_ID, f"⚠️ Локи строит козни (Ошибка): {e}")
+        bot.send_message(YOUR_CHAT_ID, f"⚠️ Ошибка: {e}")
 
-# --- ОБРАБОТЧИКИ ---
+def ask_odin_step(message):
+    # Если нажал кнопку меню вместо вопроса
+    if message.text in ["📜 Расскажи Сагу", "🔮 Спросить Одина", "/start"]:
+        bot.send_message(message.chat.id, "👁️ Ритуал прерван.", reply_markup=get_main_keyboard())
+        return
+
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+        answer = clean_text(model.generate_content(f"{SYSTEM_PROMPT_ORACLE} {message.text}").text)
+        # ВОЗВРАЩАЕМ КЛАВИАТУРУ ВМЕСТЕ С ОТВЕТОМ
+        bot.reply_to(message, f"👁️ **Один говорит:**\n\n{answer}", parse_mode="Markdown", reply_markup=get_main_keyboard())
+    except:
+        bot.send_message(message.chat.id, "Туман скрыл ответ...", reply_markup=get_main_keyboard())
+
 @bot.message_handler(commands=['start'])
 def start(m):
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(types.KeyboardButton("📜 Расскажи Сагу"))
-    bot.send_message(m.chat.id, "⚔️ Добро пожаловать, путник.", reply_markup=kb)
+    bot.send_message(m.chat.id, "⚔️ Чертоги открыты. Что ищешь?", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda m: m.text == "📜 Расскажи Сагу")
-def on_click(m):
-    # Случайная фраза ожидания
-    wait_msg = random.choice(WAIT_PHRASES)
-    bot.send_message(m.chat.id, wait_msg)
+def on_saga_click(m):
+    bot.send_message(m.chat.id, random.choice(WAIT_PHRASES))
     process_topic()
+
+@bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
+def on_oracle_click(m):
+    msg = bot.send_message(m.chat.id, "👁️ Всеотец слушает. Задай свой вопрос...", reply_markup=types.ReplyKeyboardRemove())
+    bot.register_next_step_handler(msg, ask_odin_step)
 
 # --- SERVER ---
 server = Flask(__name__)

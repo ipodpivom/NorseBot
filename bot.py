@@ -19,12 +19,8 @@ YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
-
-# Киев зимой = UTC+2.
-# Чтобы было 6:00 утра по Киеву -> ставим 4
-TIME_RUNE_UTC = 4 
-# Чтобы было 9:00 утра по Киеву -> ставим 7
-TIME_SAGA_UTC = 7
+TIME_RUNE_UTC = 4  # 6:00 Киев
+TIME_SAGA_UTC = 7  # 9:00 Киев
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest') 
@@ -49,7 +45,7 @@ subscribers = set()
 if YOUR_CHAT_ID:
     subscribers.add(YOUR_CHAT_ID)
 
-# --- ФРАЗЫ ---
+# --- АТМОСФЕРНЫЕ ФРАЗЫ ---
 WAIT_PHRASES = [
     "🦅 Хугин и Мунин полетели за историей...",
     "⏳ Норны сплетают нить, жди...",
@@ -65,17 +61,22 @@ START_PHRASES = [
     "🐺 Фенрир завыл..."
 ]
 
+# Фразы для вытягивания руны
+RUNE_ACTION_PHRASES = [
+    "🎲 Кости брошены на шкуру медведя...",
+    "✋ Рука Одина тянется в мешок судеб...",
+    "🌑 Камни шепчут во тьме...",
+    "👁️ Гляди внимательно, воин, это твой знак...",
+    "💨 Ветер перемен перевернул камень..."
+]
+
 # --- ПРОМПТЫ ---
 SYSTEM_PROMPT_TOPIC_GEN = "Ты знаток мифов. Придумай одну редкую тему скандинавского фольклора. Только заголовок."
 
 SYSTEM_PROMPT_TEXT = """
 Ты — древний скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (объем 8000-9000 знаков).
-Пиши МАКСИМАЛЬНО ПОДРОБНО, с диалогами, описаниями природы и чувств героев.
-СТРУКТУРА:
-1. ЭТИМОЛОГИЯ.
-2. МИФ/ИСТОРИЯ (Детальный пересказ).
-3. СИМВОЛИЗМ.
-4. СВЯЗЬ С СОВРЕМЕННОСТЬЮ.
+Пиши МАКСИМАЛЬНО ПОДРОБНО, с диалогами.
+СТРУКТУРА: 1. ЭТИМОЛОГИЯ, 2. МИФ (Детально), 3. СИМВОЛИЗМ, 4. СОВРЕМЕННОСТЬ.
 Не используй жирный шрифт. Тема: 
 """
 
@@ -84,10 +85,8 @@ SYSTEM_PROMPT_IMAGE = "Cinematic digital art, epic Norse mythology scene, dramat
 SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь смертному мудро, кратко (4 предл.), метафорично. СТРОГО НА РУССКОМ. Вопрос: "
 
 SYSTEM_PROMPT_RUNE = """
-Ты — Один. Твоя рука вытянула Руну Дня.
-Руна: {rune}.
-Дай краткое (3-4 предложения), мистическое, но полезное напутствие на этот день.
-Что эта руна предвещает? О чем предупреждает?
+Ты — Шаман. Выпала Руна: {rune}.
+Дай краткое (3-4 предложения), мистическое толкование для воина, который ищет ответ прямо сейчас.
 Отвечай СТРОГО НА РУССКОМ ЯЗЫКЕ.
 """
 
@@ -123,23 +122,20 @@ def get_topic():
         except: pass
     return model.generate_content(SYSTEM_PROMPT_TOPIC_GEN).text.strip(), "🔮 Руны AI"
 
-# --- ОБРАБОТЧИКИ ---
+# --- ЛОГИКА ГЕНЕРАЦИИ (ОБЩАЯ) ---
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     btn1 = types.KeyboardButton("📜 Расскажи Сагу")
-    btn2 = types.KeyboardButton("🔮 Спросить Одина")
-    markup.add(btn1, btn2)
+    btn2 = types.KeyboardButton("ᛟ Вытянуть Руну") # Новая кнопка
+    btn3 = types.KeyboardButton("🔮 Спросить Одина")
+    markup.add(btn1, btn2, btn3)
     return markup
 
-# Функция для генерации саги (используется и кнопкой, и рассылкой)
 def generate_and_send_saga(target_chat_id=None):
     try:
         topic, src = get_topic()
-        
-        # Если чат не указан, шлем всем подписчикам (рассылка)
         targets = [target_chat_id] if target_chat_id else subscribers
         
-        # Генерируем контент ОДИН раз
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
         resp_img = requests.post(API_URL, headers=headers, json={"inputs": img_p})
@@ -150,28 +146,48 @@ def generate_and_send_saga(target_chat_id=None):
         
         story = clean_text(model.generate_content(f"{SYSTEM_PROMPT_TEXT} {topic}").text)
 
-        # Рассылаем всем
         for chat_id in targets:
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
-                if resp_img.status_code == 200: 
-                    bot.send_photo(chat_id, resp_img.content)
-                
-                with open(fname, 'rb') as a: 
-                    bot.send_voice(chat_id, a)
-                
+                if resp_img.status_code == 200: bot.send_photo(chat_id, resp_img.content)
+                with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
                 smart_split_and_send(chat_id, story)
-            except Exception as e:
-                print(f"Ошибка отправки {chat_id}: {e}")
-
+            except: pass
         if os.path.exists(fname): os.remove(fname)
+    except Exception as e: print(f"Err saga: {e}")
 
-    except Exception as e:
-        print(f"Глобальная ошибка саги: {e}")
+def generate_and_send_rune(target_chat_id=None):
+    try:
+        rune = random.choice(RUNES)
+        prompt = SYSTEM_PROMPT_RUNE.format(rune=rune)
+        prediction = clean_text(model.generate_content(prompt).text)
+        
+        # 🔥 ПРОМПТ: Рука держит камень с руной
+        rune_name_eng = rune.split('(')[1].split(')')[0] # Достаем "Fehu"
+        img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
+        
+        resp = requests.post(API_URL, headers=headers, json={"inputs": img_prompt})
+        
+        targets = [target_chat_id] if target_chat_id else subscribers
+        
+        for user_id in targets:
+            try:
+                # Если это ручной запрос - шлем атмосферную фразу
+                if target_chat_id: 
+                    bot.send_message(user_id, random.choice(RUNE_ACTION_PHRASES))
+                else:
+                    bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
+
+                if resp.status_code == 200:
+                    bot.send_photo(user_id, resp.content, caption=f"**{rune}**", parse_mode="Markdown")
+                
+                bot.send_message(user_id, f"👁️ **Толкование:**\n\n{prediction}", parse_mode="Markdown")
+            except: pass
+    except Exception as e: print(f"Err rune: {e}")
 
 def ask_odin_step(message):
-    if message.text in ["📜 Расскажи Сагу", "🔮 Спросить Одина", "/start", "/subscribe"]:
+    if message.text in ["📜 Расскажи Сагу", "🔮 Спросить Одина", "ᛟ Вытянуть Руну", "/start"]:
         bot.send_message(message.chat.id, "👁️ Ритуал прерван.", reply_markup=get_main_keyboard())
         return
     try:
@@ -181,42 +197,21 @@ def ask_odin_step(message):
     except:
         bot.send_message(message.chat.id, "Туман скрыл ответ...", reply_markup=get_main_keyboard())
 
-# --- УТРЕННЯЯ РАССЫЛКА РУН ---
-def send_morning_rune():
-    print("☀️ Рассылка Рун...")
-    try:
-        rune = random.choice(RUNES)
-        prompt = SYSTEM_PROMPT_RUNE.format(rune=rune)
-        prediction = clean_text(model.generate_content(prompt).text)
-        
-        img_prompt = f"Mystical glowing Norse rune symbol {rune.split(' ')[0]} carved on dark stone, magical blue energy, cinematic lighting, 8k"
-        resp = requests.post(API_URL, headers=headers, json={"inputs": img_prompt})
-        
-        for user_id in subscribers:
-            try:
-                bot.send_message(user_id, f"🌅 **Руна Дня:** {rune}", parse_mode="Markdown")
-                if resp.status_code == 200:
-                    bot.send_photo(user_id, resp.content)
-                bot.send_message(user_id, f"👁️ **Слово Одина:**\n\n{prediction}", parse_mode="Markdown")
-            except: pass
-    except Exception as e:
-        print(f"Ошибка рун: {e}")
-
+# --- ОБРАБОТЧИКИ ---
 @bot.message_handler(commands=['start'])
 def start(m):
     subscribers.add(str(m.chat.id))
-    bot.send_message(m.chat.id, "⚔️ Чертоги открыты. Жди Руну в 6:00 и Сагу в 9:00.", reply_markup=get_main_keyboard())
-
-@bot.message_handler(commands=['subscribe'])
-def subscribe(m):
-    subscribers.add(str(m.chat.id))
-    bot.send_message(m.chat.id, "🔔 Подписка оформлена.")
+    bot.send_message(m.chat.id, "⚔️ Чертоги открыты.", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda m: m.text == "📜 Расскажи Сагу")
 def on_saga_click(m):
     bot.send_message(m.chat.id, random.choice(WAIT_PHRASES))
-    # Запускаем в отдельном потоке, чтобы бот не вис
     threading.Thread(target=generate_and_send_saga, args=(m.chat.id,)).start()
+
+@bot.message_handler(func=lambda m: m.text == "ᛟ Вытянуть Руну")
+def on_rune_click(m):
+    # Запускаем в потоке, чтобы не тормозило
+    threading.Thread(target=generate_and_send_rune, args=(m.chat.id,)).start()
 
 @bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
 def on_oracle_click(m):
@@ -227,24 +222,19 @@ def on_oracle_click(m):
 server = Flask(__name__)
 @server.route("/")
 def webhook(): return "OK", 200
-
 def run_server(): server.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 def scheduler():
     while True:
         now = datetime.now()
-        
-        # 1. РУНЫ (06:00 Киев -> 04:00 UTC)
+        # 1. РУНЫ (04:00 UTC)
         if now.hour == TIME_RUNE_UTC and now.minute == 0:
-            send_morning_rune()
+            generate_and_send_rune() # Всем подписчикам
             time.sleep(61)
-            
-        # 2. ИСТОРИЯ (09:00 Киев -> 07:00 UTC)
+        # 2. ИСТОРИЯ (07:00 UTC)
         elif now.hour == TIME_SAGA_UTC and now.minute == 0:
-            print("📜 Рассылка Саги...")
-            generate_and_send_saga() # Без аргументов = всем подписчикам
-            time.sleep(61)
-            
+            generate_and_send_saga() # Всем подписчикам
+            time.sleep(61)  
         time.sleep(30)
 
 if __name__ == "__main__":

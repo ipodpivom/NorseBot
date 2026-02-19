@@ -8,14 +8,15 @@ import threading
 import random
 import asyncio
 import edge_tts
+import urllib.parse  # НОВЫЙ ИМПОРТ ДЛЯ КАРТИНОК
 from flask import Flask
 from datetime import datetime
 
 # --- КЛЮЧИ ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-HUGGING_FACE_KEY = os.environ.get("HUGGING_FACE_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
+# Ключ Hugging Face больше не нужен!
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
@@ -25,9 +26,6 @@ TIME_SAGA_UTC = 7  # 9:00 Киев
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest') 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
-headers = {"Authorization": f"Bearer {HUGGING_FACE_KEY}"}
 
 # --- СПИСОК РУН ---
 RUNES = [
@@ -61,7 +59,6 @@ START_PHRASES = [
     "🐺 Фенрир завыл..."
 ]
 
-# Фразы для вытягивания руны
 RUNE_ACTION_PHRASES = [
     "🎲 Кости брошены на шкуру медведя...",
     "✋ Рука Одина тянется в мешок судеб...",
@@ -126,7 +123,7 @@ def get_topic():
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     btn1 = types.KeyboardButton("📜 Расскажи Сагу")
-    btn2 = types.KeyboardButton("ᛟ Вытянуть Руну") # Новая кнопка
+    btn2 = types.KeyboardButton("ᛟ Вытянуть Руну") 
     btn3 = types.KeyboardButton("🔮 Спросить Одина")
     markup.add(btn1, btn2, btn3)
     return markup
@@ -136,10 +133,15 @@ def generate_and_send_saga(target_chat_id=None):
         topic, src = get_topic()
         targets = [target_chat_id] if target_chat_id else subscribers
         
+        # --- НОВАЯ БЕСПЛАТНАЯ ГЕНЕРАЦИЯ КАРТИНОК ---
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
-        resp_img = requests.post(API_URL, headers=headers, json={"inputs": img_p})
         
+        encoded_prompt = urllib.parse.quote(img_p)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+        resp_img = requests.get(image_url)
+        # ---------------------------------------------
+
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
         asyncio.run(generate_voice_file(v_text, fname))
@@ -163,17 +165,19 @@ def generate_and_send_rune(target_chat_id=None):
         prompt = SYSTEM_PROMPT_RUNE.format(rune=rune)
         prediction = clean_text(model.generate_content(prompt).text)
         
-        # 🔥 ПРОМПТ: Рука держит камень с руной
-        rune_name_eng = rune.split('(')[1].split(')')[0] # Достаем "Fehu"
+        rune_name_eng = rune.split('(')[1].split(')')[0]
         img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
         
-        resp = requests.post(API_URL, headers=headers, json={"inputs": img_prompt})
+        # --- НОВАЯ БЕСПЛАТНАЯ ГЕНЕРАЦИЯ КАРТИНОК ---
+        encoded_prompt = urllib.parse.quote(img_prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+        resp = requests.get(image_url)
+        # ---------------------------------------------
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
         for user_id in targets:
             try:
-                # Если это ручной запрос - шлем атмосферную фразу
                 if target_chat_id: 
                     bot.send_message(user_id, random.choice(RUNE_ACTION_PHRASES))
                 else:
@@ -210,7 +214,6 @@ def on_saga_click(m):
 
 @bot.message_handler(func=lambda m: m.text == "ᛟ Вытянуть Руну")
 def on_rune_click(m):
-    # Запускаем в потоке, чтобы не тормозило
     threading.Thread(target=generate_and_send_rune, args=(m.chat.id,)).start()
 
 @bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
@@ -227,13 +230,11 @@ def run_server(): server.run(host="0.0.0.0", port=int(os.environ.get("PORT", 500
 def scheduler():
     while True:
         now = datetime.now()
-        # 1. РУНЫ (04:00 UTC)
         if now.hour == TIME_RUNE_UTC and now.minute == 0:
-            generate_and_send_rune() # Всем подписчикам
+            generate_and_send_rune() 
             time.sleep(61)
-        # 2. ИСТОРИЯ (07:00 UTC)
         elif now.hour == TIME_SAGA_UTC and now.minute == 0:
-            generate_and_send_saga() # Всем подписчикам
+            generate_and_send_saga() 
             time.sleep(61)  
         time.sleep(30)
 

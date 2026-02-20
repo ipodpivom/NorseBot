@@ -23,16 +23,16 @@ START_DATE = datetime(2026, 2, 8)
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
-# Инициализируем новый клиент
+# Создаем хитрую заглушку, чтобы твой старый код продолжал работать без изменений!
+# Инициализируем новый клиент Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Создаем хитрую заглушку, чтобы твой старый код продолжал работать без изменений!
+# Создаем хитрую заглушку, чтобы твой старый код ниже работал без изменений
 class ModelMock:
     def generate_content(self, prompt):
         class ResponseMock:
             def __init__(self, text):
                 self.text = text
-        # gemini-2.5-flash — это новая, более быстрая и умная модель
         res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
         return ResponseMock(res.text)
 
@@ -141,15 +141,20 @@ def get_pollinations_url(prompt):
 
 def download_image(url):
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://pollinations.ai/'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://pollinations.ai/',
+        'Accept': 'image/jpeg, image/png, image/*'
     }
     try:
-        resp = requests.get(url, headers=headers, timeout=60)
+        print(f"⏳ Пробую скачать картинку: {url}", flush=True)
+        resp = requests.get(url, headers=headers, timeout=45)
         if resp.status_code == 200:
+            print("✅ Картинка успешно скачана!", flush=True)
             return resp.content
+        else:
+            print(f"❌ Ошибка Pollinations HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
     except Exception as e:
-        print(f"Ошибка скачивания: {e}")
+        print(f"❌ Критическая ошибка скачивания: {e}", flush=True)
     return None
 
 def generate_and_send_saga(target_chat_id=None):

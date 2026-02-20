@@ -131,27 +131,82 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК (С УМНЫМ ДЕТЕКТОРОМ ФЕЙКОВ)
+# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК (С ПРОКСИ ДЛЯ LEXICA И ДЕТЕКТОРОМ)
 def generate_image(prompt, mode="instant"):
     headers = {'User-Agent': 'Mozilla/5.0'}
 
     def get_lexica():
         try:
-            print(f"⏳ [Lexica] Ищу готовый арт...", flush=True)
-            url = f"https://lexica.art/api/v1/search?q={urllib.parse.quote(prompt)}"
-            resp = requests.get(url, headers=headers, timeout=20)
+            print(f"⏳ [Lexica] Ищу готовый арт через прокси...", flush=True)
+            # Оборачиваем запрос к Lexica в прокси allorigins, чтобы обмануть Cloudflare
+            lexica_url = f"https://lexica.art/api/v1/search?q={urllib.parse.quote(prompt)}"
+            proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(lexica_url)}"
+            
+            resp = requests.get(proxy_url, headers=headers, timeout=20)
             if resp.status_code == 200:
-                data = resp.json()
-                if data and "images" in data and len(data["images"]) > 0:
-                    top_images = data["images"][:3]
-                    image_url = random.choice(top_images)["src"]
-                    img_resp = requests.get(image_url, headers=headers, timeout=20)
-                    if img_resp.status_code == 200:
-                        print("✅ [Lexica] Арт найден и скачан!", flush=True)
-                        return img_resp.content
+                try:
+                    data = resp.json()
+                    if data and "images" in data and len(data["images"]) > 0:
+                        top_images = data["images"][:3]
+                        image_url = random.choice(top_images)["src"]
+                        
+                        print(f"✅ [Lexica] Ссылка найдена! Скачиваю арт...", flush=True)
+                        # Картинку тоже качаем через прокси, чтобы не поймать блок на скачивании
+                        img_proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(image_url)}"
+                        img_resp = requests.get(img_proxy_url, headers=headers, timeout=20)
+                        
+                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                            print("✅ [Lexica] Арт успешно скачан!", flush=True)
+                            return img_resp.content
+                except Exception as json_e:
+                    print(f"❌ [Lexica] Ошибка парсинга (снова защита?): {json_e}", flush=True)
+            else:
+                print(f"❌ [Lexica] Ошибка HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
         except Exception as e:
-            print(f"❌ Ошибка Lexica: {e}", flush=True)
+            print(f"❌ Критическая ошибка Lexica: {e}", flush=True)
         return None
+
+    def get_airforce():
+        try:
+            print(f"⏳ [Airforce] Генерирую новую картинку...", flush=True)
+            airforce_url = f"https://api.airforce/v1/imagine?prompt={urllib.parse.quote(prompt)}&size=1:1"
+            air_resp = requests.get(airforce_url, headers=headers, timeout=60)
+            
+            if air_resp.status_code == 200 and len(air_resp.content) > 1000:
+                # 🔥 ДЕТЕКТОР ФЕЙКОВ: Проверяем первые байты файла
+                content_start = air_resp.content[:20].lower()
+                if b'<!doctype' in content_start or b'<html' in content_start:
+                    print("⚠️ [Airforce] Подсунул HTML-заглушку вместо картинки! Брак.", flush=True)
+                    return None
+                    
+                print("✅ [Airforce] Настоящая картинка успешно сгенерирована!", flush=True)
+                return air_resp.content
+        except Exception as e:
+            print(f"❌ Ошибка Airforce: {e}", flush=True)
+        return None
+
+    if mode == "instant":
+        print("⚡ Режим Instant (по кнопке) - Быстрый поиск", flush=True)
+        img = get_lexica()
+        if img: return img
+        print("⚠️ Lexica пуста, запускаю быструю генерацию...", flush=True)
+        return get_airforce()
+
+    elif mode == "scheduled":
+        print("🕰 Режим Scheduled (по таймеру) - Фоновая генерация", flush=True)
+        # Делаем 3 попытки, если Airforce подсовывает брак
+        for attempt in range(1, 4):
+            print(f"🔄 Попытка генерации {attempt}/3...", flush=True)
+            img = get_airforce()
+            if img: return img
+            if attempt < 3:
+                print("💤 Сервер Airforce выдал брак или занят, ждем 20 секунд...", flush=True)
+                time.sleep(20)
+        
+        print("⚠️ Airforce не справился за 3 попытки, беру резервную картинку из Lexica...", flush=True)
+        return get_lexica()
+
+    return None
 
     def get_airforce():
         try:

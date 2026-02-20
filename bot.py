@@ -17,6 +17,7 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
+TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
@@ -129,9 +130,8 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-# 🔥 ГЕНЕРАЦИЯ ЧЕРЕЗ TOGETHER AI (БЕЗ НОМЕРОВ ТЕЛЕФОНОВ)
+# 🔥 ГЕНЕРАЦИЯ ЧЕРЕЗ TOGETHER AI
 def generate_image(prompt):
-    TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY")
     if not TOGETHER_API_KEY:
         print("❌ Ошибка: Ключ TOGETHER_API_KEY не найден в Render!", flush=True)
         return None
@@ -147,10 +147,11 @@ def generate_image(prompt):
             "height": 1024,
             "steps": 4,
             "n": 1,
-            "response_format": "b64_json" # Просим вернуть картинку в формате base64
+            "response_format": "b64_json"
         }
         headers = {
-            "Authorization": f"Bearer {TOGETHER_API_KEY}",
+            # .strip() удалит случайные пробелы, из-за которых бывает ошибка 401
+            "Authorization": f"Bearer {TOGETHER_API_KEY.strip()}",
             "Content-Type": "application/json"
         }
         
@@ -159,7 +160,6 @@ def generate_image(prompt):
         if resp.status_code == 200:
             data = resp.json()
             if "data" in data and len(data["data"]) > 0:
-                # Декодируем картинку из текста обратно в файл
                 b64_img = data["data"][0]["b64_json"]
                 print(f"✅ Картинка успешно получена от Together AI!", flush=True)
                 return base64.b64decode(b64_img)

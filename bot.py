@@ -128,17 +128,16 @@ def get_pollinations_url(prompt):
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
 
 def download_image(url):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://pollinations.ai/'
+    }
     try:
-        print(f"🌐 Пробую скачать картинку: {url}")
         resp = requests.get(url, headers=headers, timeout=60)
-        print(f"📥 Ответ от сервера картинок: {resp.status_code}")
         if resp.status_code == 200:
             return resp.content
-        else:
-            print("⚠️ Сервер картинок заблокировал загрузку (Cloudflare).")
     except Exception as e:
-        print(f"⚠️ Ошибка сети при скачивании: {e}")
+        print(f"Ошибка скачивания: {e}")
     return None
 
 def generate_and_send_saga(target_chat_id=None):
@@ -162,12 +161,13 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
-                # Запасной план для картинки
+                # 🔥 МАГИЧЕСКОЕ ИСПРАВЛЕНИЕ ТУТ
                 if img_data:
-                    bot.send_photo(chat_id, io.BytesIO(img_data))
+                    photo = io.BytesIO(img_data)
+                    photo.name = 'image.jpg' # Телеграм теперь поймет, что это картинка!
+                    bot.send_photo(chat_id, photo)
                 else:
                     try:
-                        print("🔄 Пробуем отправить ссылку напрямую в Телеграм...")
                         bot.send_photo(chat_id, image_url)
                     except: pass
                 
@@ -175,7 +175,7 @@ def generate_and_send_saga(target_chat_id=None):
                 bot.send_chat_action(chat_id, 'typing')
                 smart_split_and_send(chat_id, story)
             except Exception as e:
-                print(f"Ошибка отправки юзеру {chat_id}: {e}")
+                print(f"Ошибка отправки юзеру: {e}")
 
         if os.path.exists(fname): os.remove(fname)
 
@@ -205,20 +205,20 @@ def generate_and_send_rune(target_chat_id=None):
                 if not target_chat_id:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                # ЗАПАСНОЙ ПЛАН: Если Render не смог, просим Телеграм скачать по ссылке
+                # 🔥 МАГИЧЕСКОЕ ИСПРАВЛЕНИЕ ТУТ
                 if img_data:
-                    bot.send_photo(user_id, io.BytesIO(img_data), caption=f"*{rune}*", parse_mode="Markdown")
+                    photo = io.BytesIO(img_data)
+                    photo.name = 'rune.jpg' # Принудительно говорим Телеграму, что это файл JPG
+                    bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
                 else:
                     try:
-                        print("🔄 Пробуем отправить ссылку напрямую в Телеграм...")
                         bot.send_photo(user_id, image_url, caption=f"*{rune}*", parse_mode="Markdown")
-                    except Exception as e:
-                        print(f"❌ Телеграм тоже не смог скачать картинку: {e}")
+                    except:
                         bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:
-                print(f"Ошибка отправки руны юзеру {user_id}: {e}")
+                print(f"Ошибка отправки руны: {e}")
 
     except Exception as e: 
         print(f"CRITICAL ERROR RUNE: {e}")

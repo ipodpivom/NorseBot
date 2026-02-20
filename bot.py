@@ -17,6 +17,7 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
+DEEPAI_API_KEY = os.environ.get("DEEPAI_API_KEY") # <--- ДОБАВЬ ЭТУ СТРОКУ
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
@@ -135,25 +136,33 @@ def get_main_keyboard():
 
 def generate_image(prompt):
     try:
-        print(f"⏳ Генерирую картинку через Hercai API (без ключей)...", flush=True)
-        # Hercai - бесплатный ИИ, который не требует токенов и не блокирует Render
-        api_url = f"https://hercai.onrender.com/v3/text2image?prompt={urllib.parse.quote(prompt)}"
+        print(f"⏳ Генерирую картинку через DeepAI...", flush=True)
         
-        resp = requests.get(api_url, timeout=60)
+        if not DEEPAI_API_KEY:
+            print("❌ Ошибка: Не найден DEEPAI_API_KEY в настройках!", flush=True)
+            return None
+            
+        # Отправляем запрос к официальному API DeepAI
+        r = requests.post(
+            "https://api.deepai.org/api/text2img",
+            data={'text': prompt},
+            headers={'api-key': DEEPAI_API_KEY},
+            timeout=60
+        )
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if "url" in data and data["url"]:
-                image_url = data["url"]
+        if r.status_code == 200:
+            data = r.json()
+            if "output_url" in data:
+                image_url = data["output_url"]
                 print(f"✅ Ссылка получена! Скачиваю картинку...", flush=True)
                 
-                # Скачиваем саму картинку по полученной ссылке
+                # Скачиваем саму картинку, чтобы отправить ее файлом в Телеграм
                 img_resp = requests.get(image_url, timeout=60)
                 if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                    print("✅ Картинка успешно загружена!", flush=True)
+                    print("✅ Картинка успешно загружена в память!", flush=True)
                     return img_resp.content
-        
-        print(f"❌ Ошибка Hercai HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
+        else:
+            print(f"❌ Ошибка DeepAI HTTP: {r.status_code}. Ответ: {r.text[:100]}", flush=True)
             
     except Exception as e:
         print(f"❌ Критическая ошибка генерации: {e}", flush=True)

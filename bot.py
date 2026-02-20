@@ -122,10 +122,8 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-# Функция получения ссылки на картинку (Pollinations)
 def get_pollinations_url(prompt):
     encoded_prompt = urllib.parse.quote(prompt)
-    # Добавляем seed, чтобы картинки были разными каждый раз
     seed = random.randint(1, 100000)
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
 
@@ -134,24 +132,31 @@ def generate_and_send_saga(target_chat_id=None):
         topic, src = get_topic()
         targets = [target_chat_id] if target_chat_id else subscribers
         
-        # 1. Ссылка на картинку
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
+        
         image_url = get_pollinations_url(img_p)
+        
+        # Скачиваем картинку
+        img_data = None
+        try:
+            resp_img = requests.get(image_url, timeout=60)
+            if resp_img.status_code == 200:
+                img_data = resp_img.content
+        except Exception as e:
+            print("Ошибка скачивания картинки саги:", e)
 
-        # 2. Голос
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
         asyncio.run(generate_voice_file(v_text, fname))
         
-        # 3. Текст
         story = clean_text(model.generate_content(f"{SYSTEM_PROMPT_TEXT} {topic}").text)
 
         for chat_id in targets:
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
-                # ОТПРАВЛЯЕМ ССЫЛКУ, А НЕ ФАЙЛ (БЫСТРЕЕ)
-                bot.send_photo(chat_id, image_url)
+                if img_data:
+                    bot.send_photo(chat_id, img_data)
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -166,27 +171,41 @@ def generate_and_send_saga(target_chat_id=None):
 
 def generate_and_send_rune(target_chat_id=None):
     try:
+        # Отправляем фразу СРАЗУ, чтобы юзер не скучал
+        if target_chat_id: 
+            bot.send_message(target_chat_id, random.choice(RUNE_ACTION_PHRASES))
+            bot.send_chat_action(target_chat_id, 'typing')
+
         rune = random.choice(RUNES)
         prompt = SYSTEM_PROMPT_RUNE.format(rune=rune)
         prediction = clean_text(model.generate_content(prompt).text)
         
-        # Промпт для картинки
         rune_name_eng = rune.split('(')[1].split(')')[0]
         img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
         image_url = get_pollinations_url(img_prompt)
+        
+        # Надежно скачиваем картинку
+        img_data = None
+        try:
+            resp = requests.get(image_url, timeout=60)
+            if resp.status_code == 200:
+                img_data = resp.content
+        except Exception as e:
+            print("Ошибка скачивания руны:", e)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
         for user_id in targets:
             try:
-                if target_chat_id: 
-                    bot.send_message(user_id, random.choice(RUNE_ACTION_PHRASES))
-                else:
+                if not target_chat_id:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                # ОТПРАВЛЯЕМ ССЫЛКУ
-                bot.send_photo(user_id, image_url, caption=f"**{rune}**", parse_mode="Markdown")
-                bot.send_message(user_id, f"👁️ **Толкование:**\n\n{prediction}", parse_mode="Markdown")
+                if img_data:
+                    bot.send_photo(user_id, img_data, caption=f"*{rune}*", parse_mode="Markdown")
+                else:
+                    bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
+                    
+                bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:
                 print(f"Ошибка отправки руны юзеру {user_id}: {e}")
 
@@ -200,7 +219,7 @@ def ask_odin_step(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
         answer = clean_text(model.generate_content(f"{SYSTEM_PROMPT_ORACLE} {message.text}").text)
-        bot.reply_to(message, f"👁️ **Один говорит:**\n\n{answer}", parse_mode="Markdown", reply_markup=get_main_keyboard())
+        bot.reply_to(message, f"👁️ *Один говорит:*\n\n{answer}", parse_mode="Markdown", reply_markup=get_main_keyboard())
     except:
         bot.send_message(message.chat.id, "Туман скрыл ответ...", reply_markup=get_main_keyboard())
 

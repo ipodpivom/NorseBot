@@ -10,7 +10,6 @@ import asyncio
 import edge_tts
 import urllib.parse
 import io
-import cloudscraper
 from flask import Flask, request
 from datetime import datetime
 
@@ -24,7 +23,6 @@ START_DATE = datetime(2026, 2, 8)
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
-# Создаем хитрую заглушку, чтобы твой старый код продолжал работать без изменений!
 # Инициализируем новый клиент Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -135,35 +133,24 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-def get_pollinations_url(prompt):
-    encoded_prompt = urllib.parse.quote(prompt)
-    seed = random.randint(1, 100000)
-    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
-
-def download_image(url):
+def generate_image(prompt):
     try:
-        print(f"⏳ Пробую пробить Cloudflare через cloudscraper...", flush=True)
-        
-        # Создаем "хитрый" клиент, который имитирует реальный Chrome
-        scraper = cloudscraper.create_scraper(browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        })
-        
-        resp = scraper.get(url, timeout=60)
-        
-        # Проверяем, что файл скачался и это не кусок текста с ошибкой
-        if resp.status_code == 200 and len(resp.content) > 1000:
-            print("✅ Защита пробита! Картинка у нас.", flush=True)
-            return resp.content
-        else:
-            print(f"❌ Ошибка HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
-            
+        print(f"⏳ Генерирую картинку через Google Imagen 3...", flush=True)
+        # Обращаемся напрямую к нейросети Google для картинок
+        result = client.models.generate_images(
+            model='imagen-3.0-generate-001',
+            prompt=prompt,
+            config={
+                "number_of_images": 1,
+                "aspect_ratio": "1:1",
+                "output_mime_type": "image/jpeg"
+            }
+        )
+        print("✅ Картинка успешно создана нейросетью Google!", flush=True)
+        return result.generated_images[0].image.image_bytes
     except Exception as e:
-        print(f"❌ Критическая ошибка скачивания: {e}", flush=True)
-        
-    return None
+        print(f"❌ Ошибка Imagen: {e}", flush=True)
+        return None
 
 def generate_and_send_saga(target_chat_id=None):
     try:
@@ -173,8 +160,7 @@ def generate_and_send_saga(target_chat_id=None):
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
         
-        image_url = get_pollinations_url(img_p)
-        img_data = download_image(image_url)
+        img_data = generate_image(img_p)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -186,15 +172,12 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
-                # 🔥 МАГИЧЕСКОЕ ИСПРАВЛЕНИЕ ТУТ
                 if img_data:
                     photo = io.BytesIO(img_data)
-                    photo.name = 'image.jpg' # Телеграм теперь поймет, что это картинка!
+                    photo.name = 'image.jpg'
                     bot.send_photo(chat_id, photo)
                 else:
-                    try:
-                        bot.send_photo(chat_id, image_url)
-                    except: pass
+                    bot.send_message(chat_id, "*(Картинка потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -220,8 +203,7 @@ def generate_and_send_rune(target_chat_id=None):
         rune_name_eng = rune.split('(')[1].split(')')[0]
         img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
         
-        image_url = get_pollinations_url(img_prompt)
-        img_data = download_image(image_url)
+        img_data = generate_image(img_prompt)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
@@ -230,16 +212,12 @@ def generate_and_send_rune(target_chat_id=None):
                 if not target_chat_id:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                # 🔥 МАГИЧЕСКОЕ ИСПРАВЛЕНИЕ ТУТ
                 if img_data:
                     photo = io.BytesIO(img_data)
-                    photo.name = 'rune.jpg' # Принудительно говорим Телеграму, что это файл JPG
+                    photo.name = 'rune.jpg'
                     bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
                 else:
-                    try:
-                        bot.send_photo(user_id, image_url, caption=f"*{rune}*", parse_mode="Markdown")
-                    except:
-                        bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
+                    bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:
@@ -282,7 +260,7 @@ def on_oracle_click(m):
 # --- SERVER & SCHEDULER ---
 server = Flask(__name__)
 
-# Render автоматически выдает эту переменную окружения (например, https://norsebot.onrender.com)
+# Render автоматически выдает эту переменную окружения
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") 
 
 # Сюда Telegram будет присылать сообщения

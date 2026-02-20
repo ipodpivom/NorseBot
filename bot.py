@@ -9,6 +9,7 @@ import random
 import asyncio
 import edge_tts
 import urllib.parse
+import io  # НОВЫЙ ИМПОРТ ДЛЯ КАРТИНОК
 from flask import Flask
 from datetime import datetime
 
@@ -113,7 +114,6 @@ def get_topic():
         except: pass
     return model.generate_content(SYSTEM_PROMPT_TOPIC_GEN).text.strip(), "🔮 Руны AI"
 
-# --- ЛОГИКА ГЕНЕРАЦИИ (ОБЩАЯ) ---
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     btn1 = types.KeyboardButton("📜 Расскажи Сагу")
@@ -127,6 +127,18 @@ def get_pollinations_url(prompt):
     seed = random.randint(1, 100000)
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
 
+# --- НОВАЯ ФУНКЦИЯ СКАЧИВАНИЯ С МАСКИРОВКОЙ ---
+def download_image(url):
+    # Притворяемся браузером Chrome, чтобы нас не блокировали
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    try:
+        resp = requests.get(url, headers=headers, timeout=60)
+        if resp.status_code == 200:
+            return resp.content
+    except Exception as e:
+        print(f"Ошибка сети при скачивании картинки: {e}")
+    return None
+
 def generate_and_send_saga(target_chat_id=None):
     try:
         topic, src = get_topic()
@@ -136,15 +148,7 @@ def generate_and_send_saga(target_chat_id=None):
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
         
         image_url = get_pollinations_url(img_p)
-        
-        # Скачиваем картинку
-        img_data = None
-        try:
-            resp_img = requests.get(image_url, timeout=60)
-            if resp_img.status_code == 200:
-                img_data = resp_img.content
-        except Exception as e:
-            print("Ошибка скачивания картинки саги:", e)
+        img_data = download_image(image_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -156,7 +160,7 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 if img_data:
-                    bot.send_photo(chat_id, img_data)
+                    bot.send_photo(chat_id, io.BytesIO(img_data))
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -171,7 +175,6 @@ def generate_and_send_saga(target_chat_id=None):
 
 def generate_and_send_rune(target_chat_id=None):
     try:
-        # Отправляем фразу СРАЗУ, чтобы юзер не скучал
         if target_chat_id: 
             bot.send_message(target_chat_id, random.choice(RUNE_ACTION_PHRASES))
             bot.send_chat_action(target_chat_id, 'typing')
@@ -182,16 +185,9 @@ def generate_and_send_rune(target_chat_id=None):
         
         rune_name_eng = rune.split('(')[1].split(')')[0]
         img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
-        image_url = get_pollinations_url(img_prompt)
         
-        # Надежно скачиваем картинку
-        img_data = None
-        try:
-            resp = requests.get(image_url, timeout=60)
-            if resp.status_code == 200:
-                img_data = resp.content
-        except Exception as e:
-            print("Ошибка скачивания руны:", e)
+        image_url = get_pollinations_url(img_prompt)
+        img_data = download_image(image_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
@@ -201,7 +197,8 @@ def generate_and_send_rune(target_chat_id=None):
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
                 if img_data:
-                    bot.send_photo(user_id, img_data, caption=f"*{rune}*", parse_mode="Markdown")
+                    # Используем io.BytesIO - Телеграм это любит
+                    bot.send_photo(user_id, io.BytesIO(img_data), caption=f"*{rune}*", parse_mode="Markdown")
                 else:
                     bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
                     

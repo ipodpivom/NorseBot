@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import google.generativeai as genai
+from google import genai
 import os
 import time
 import requests
@@ -23,8 +23,20 @@ START_DATE = datetime(2026, 2, 8)
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-flash-latest') 
+# Инициализируем новый клиент
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Создаем хитрую заглушку, чтобы твой старый код продолжал работать без изменений!
+class ModelMock:
+    def generate_content(self, prompt):
+        class ResponseMock:
+            def __init__(self, text):
+                self.text = text
+        # gemini-2.5-flash — это новая, более быстрая и умная модель
+        res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+        return ResponseMock(res.text)
+
+model = ModelMock()
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # --- СПИСОК РУН ---

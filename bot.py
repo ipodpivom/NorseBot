@@ -12,6 +12,7 @@ import urllib.parse
 import io
 from flask import Flask, request
 from datetime import datetime
+from duckduckgo_search import DDGS  # 🔥 НОВАЯ БИБЛИОТЕКА ДЛЯ ПОИСКА В ИНТЕРНЕТЕ
 
 # --- КЛЮЧИ ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -131,122 +132,66 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК (С ПРОКСИ ДЛЯ LEXICA И ДЕТЕКТОРОМ)
+# 🔥 АБСОЛЮТНО НОВАЯ ФУНКЦИЯ ПОИСКА КАРТИНОК (ПЛАН ТИТАН)
 def generate_image(prompt, mode="instant"):
     headers = {'User-Agent': 'Mozilla/5.0'}
 
-    def get_lexica():
+    def get_ddg_image():
         try:
-            print(f"⏳ [Lexica] Ищу готовый арт через прокси...", flush=True)
-            # Оборачиваем запрос к Lexica в прокси allorigins, чтобы обмануть Cloudflare
-            lexica_url = f"https://lexica.art/api/v1/search?q={urllib.parse.quote(prompt)}"
-            proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(lexica_url)}"
-            
-            resp = requests.get(proxy_url, headers=headers, timeout=20)
-            if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    if data and "images" in data and len(data["images"]) > 0:
-                        top_images = data["images"][:3]
-                        image_url = random.choice(top_images)["src"]
-                        
-                        print(f"✅ [Lexica] Ссылка найдена! Скачиваю арт...", flush=True)
-                        # Картинку тоже качаем через прокси, чтобы не поймать блок на скачивании
-                        img_proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(image_url)}"
-                        img_resp = requests.get(img_proxy_url, headers=headers, timeout=20)
-                        
-                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                            print("✅ [Lexica] Арт успешно скачан!", flush=True)
-                            return img_resp.content
-                except Exception as json_e:
-                    print(f"❌ [Lexica] Ошибка парсинга (снова защита?): {json_e}", flush=True)
-            else:
-                print(f"❌ [Lexica] Ошибка HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
+            print(f"⏳ [DDG] Ищу арт в поиске по запросу: {prompt[:30]}...", flush=True)
+            with DDGS() as ddgs:
+                # Ищем 3 лучшие картинки по запросу
+                results = list(ddgs.images(prompt, max_results=3))
+                if results:
+                    image_url = random.choice(results)['image']
+                    print(f"✅ [DDG] Найдена ссылка: {image_url}", flush=True)
+                    
+                    # Скачиваем картинку для отправки
+                    img_resp = requests.get(image_url, headers=headers, timeout=20)
+                    if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                        print("✅ [DDG] Картинка успешно скачана!", flush=True)
+                        return img_resp.content
         except Exception as e:
-            print(f"❌ Критическая ошибка Lexica: {e}", flush=True)
+            print(f"❌ Ошибка DDG поиска: {e}", flush=True)
         return None
 
     def get_airforce():
         try:
-            print(f"⏳ [Airforce] Генерирую новую картинку...", flush=True)
+            print(f"⏳ [Airforce] Пробую ИИ-генерацию...", flush=True)
             airforce_url = f"https://api.airforce/v1/imagine?prompt={urllib.parse.quote(prompt)}&size=1:1"
             air_resp = requests.get(airforce_url, headers=headers, timeout=60)
             
             if air_resp.status_code == 200 and len(air_resp.content) > 1000:
-                # 🔥 ДЕТЕКТОР ФЕЙКОВ: Проверяем первые байты файла
                 content_start = air_resp.content[:20].lower()
                 if b'<!doctype' in content_start or b'<html' in content_start:
-                    print("⚠️ [Airforce] Подсунул HTML-заглушку вместо картинки! Брак.", flush=True)
+                    print("⚠️ [Airforce] Снова HTML-заглушка. Брак.", flush=True)
                     return None
-                    
-                print("✅ [Airforce] Настоящая картинка успешно сгенерирована!", flush=True)
+                print("✅ [Airforce] Картинка успешно сгенерирована!", flush=True)
                 return air_resp.content
         except Exception as e:
             print(f"❌ Ошибка Airforce: {e}", flush=True)
         return None
 
     if mode == "instant":
-        print("⚡ Режим Instant (по кнопке) - Быстрый поиск", flush=True)
-        img = get_lexica()
+        print("⚡ Режим Instant - Поиск в интернете", flush=True)
+        # Для мгновенного ответа сразу идем в поисковик, это быстрее всего
+        img = get_ddg_image()
         if img: return img
-        print("⚠️ Lexica пуста, запускаю быструю генерацию...", flush=True)
+        print("⚠️ Поиск пуст, пробую быструю генерацию...", flush=True)
         return get_airforce()
 
     elif mode == "scheduled":
-        print("🕰 Режим Scheduled (по таймеру) - Фоновая генерация", flush=True)
-        # Делаем 3 попытки, если Airforce подсовывает брак
+        print("🕰 Режим Scheduled - Фоновая генерация", flush=True)
         for attempt in range(1, 4):
             print(f"🔄 Попытка генерации {attempt}/3...", flush=True)
             img = get_airforce()
             if img: return img
             if attempt < 3:
-                print("💤 Сервер Airforce выдал брак или занят, ждем 20 секунд...", flush=True)
+                print("💤 Ждем 20 секунд...", flush=True)
                 time.sleep(20)
         
-        print("⚠️ Airforce не справился за 3 попытки, беру резервную картинку из Lexica...", flush=True)
-        return get_lexica()
-
-    return None
-
-    def get_airforce():
-        try:
-            print(f"⏳ [Airforce] Генерирую новую картинку...", flush=True)
-            airforce_url = f"https://api.airforce/v1/imagine?prompt={urllib.parse.quote(prompt)}&size=1:1"
-            air_resp = requests.get(airforce_url, headers=headers, timeout=60)
-            
-            if air_resp.status_code == 200 and len(air_resp.content) > 1000:
-                # 🔥 ДЕТЕКТОР ФЕЙКОВ: Проверяем первые байты файла
-                content_start = air_resp.content[:20].lower()
-                if b'<!doctype' in content_start or b'<html' in content_start:
-                    print("⚠️ [Airforce] Подсунул HTML-заглушку вместо картинки! Брак.", flush=True)
-                    return None
-                    
-                print("✅ [Airforce] Настоящая картинка успешно сгенерирована!", flush=True)
-                return air_resp.content
-        except Exception as e:
-            print(f"❌ Ошибка Airforce: {e}", flush=True)
-        return None
-
-    if mode == "instant":
-        print("⚡ Режим Instant (по кнопке) - Быстрый поиск", flush=True)
-        img = get_lexica()
-        if img: return img
-        print("⚠️ Lexica пуста, запускаю быструю генерацию...", flush=True)
-        return get_airforce()
-
-    elif mode == "scheduled":
-        print("🕰 Режим Scheduled (по таймеру) - Фоновая генерация", flush=True)
-        # Делаем 3 попытки, если Airforce подсовывает брак
-        for attempt in range(1, 4):
-            print(f"🔄 Попытка генерации {attempt}/3...", flush=True)
-            img = get_airforce()
-            if img: return img
-            if attempt < 3:
-                print("💤 Сервер Airforce выдал брак или занят, ждем 20 секунд...", flush=True)
-                time.sleep(20)
-        
-        print("⚠️ Airforce не справился за 3 попытки, беру резервную картинку из Lexica...", flush=True)
-        return get_lexica()
+        print("⚠️ Генератор сдался, забираю крутую картинку из поиска DDG!", flush=True)
+        return get_ddg_image()
 
     return None
 
@@ -281,7 +226,7 @@ def generate_and_send_saga(target_chat_id=None, mode="instant"):
                         photo_sent = True
                     except Exception as img_e:
                         print(f"❌ ТГ отклонил картинку Саги: {img_e}", flush=True)
-                        bot.send_message(chat_id, "🌪 *Видение обрывается... Норны ткут новый узор, подожди...*", parse_mode="Markdown")
+                        bot.send_message(chat_id, "🌪 *Видение обрывается... Ищу другой узор...*", parse_mode="Markdown")
                         bot.send_chat_action(chat_id, 'typing')
                         
                         reserve_img = generate_image(img_p, mode="instant")
@@ -338,7 +283,7 @@ def generate_and_send_rune(target_chat_id=None, mode="instant"):
                         photo_sent = True
                     except Exception as img_e:
                         print(f"❌ ТГ отклонил картинку Руны: {img_e}", flush=True)
-                        bot.send_message(user_id, "🌫 *Туман скрывает истинный облик твоей руны... Взываю к древним духам снова...*", parse_mode="Markdown")
+                        bot.send_message(user_id, "🌫 *Туман скрывает облик... Ищу в древних архивах...*", parse_mode="Markdown")
                         bot.send_chat_action(user_id, 'typing')
                         
                         reserve_img = generate_image(img_prompt, mode="instant")
@@ -380,12 +325,13 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text == "📜 Расскажи Сагу")
 def on_saga_click(m):
     bot.send_message(m.chat.id, random.choice(WAIT_PHRASES))
+    # Саги по кнопке делаем Instant (сразу гуглим арт, не ждем)
     threading.Thread(target=generate_and_send_saga, args=(m.chat.id, "instant")).start()
 
 @bot.message_handler(func=lambda m: m.text == "ᛟ Вытянуть Руну")
 def on_rune_click(m):
-    # 🔥 ВРЕМЕННО СТОИТ SCHEDULED ДЛЯ ТЕСТА ОТЛОЖЕННОЙ ГЕНЕРАЦИИ
-    threading.Thread(target=generate_and_send_rune, args=(m.chat.id, "scheduled")).start()
+    # Руны по кнопке тоже Instant
+    threading.Thread(target=generate_and_send_rune, args=(m.chat.id, "instant")).start()
 
 @bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
 def on_oracle_click(m):
@@ -412,6 +358,7 @@ def index():
 def scheduler():
     while True:
         now = datetime.now()
+        # Для расписания оставляем Scheduled (фоновую генерацию с 3 попытками)
         if now.hour == TIME_RUNE_UTC and now.minute == 0:
             generate_and_send_rune(mode="scheduled") 
             time.sleep(61)

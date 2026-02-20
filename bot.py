@@ -135,22 +135,30 @@ def get_main_keyboard():
 
 def generate_image(prompt):
     try:
-        print(f"⏳ Генерирую картинку через Google Imagen 3...", flush=True)
-        # Обращаемся напрямую к нейросети Google для картинок
-        result = client.models.generate_images(
-            model='imagen-3.0-generate-001',
-            prompt=prompt,
-            config={
-                "number_of_images": 1,
-                "aspect_ratio": "1:1",
-                "output_mime_type": "image/jpeg"
-            }
-        )
-        print("✅ Картинка успешно создана нейросетью Google!", flush=True)
-        return result.generated_images[0].image.image_bytes
+        print(f"⏳ Генерирую картинку через Hercai API (без ключей)...", flush=True)
+        # Hercai - бесплатный ИИ, который не требует токенов и не блокирует Render
+        api_url = f"https://hercai.onrender.com/v3/text2image?prompt={urllib.parse.quote(prompt)}"
+        
+        resp = requests.get(api_url, timeout=60)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if "url" in data and data["url"]:
+                image_url = data["url"]
+                print(f"✅ Ссылка получена! Скачиваю картинку...", flush=True)
+                
+                # Скачиваем саму картинку по полученной ссылке
+                img_resp = requests.get(image_url, timeout=60)
+                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                    print("✅ Картинка успешно загружена!", flush=True)
+                    return img_resp.content
+        
+        print(f"❌ Ошибка Hercai HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
+            
     except Exception as e:
-        print(f"❌ Ошибка Imagen: {e}", flush=True)
-        return None
+        print(f"❌ Критическая ошибка генерации: {e}", flush=True)
+        
+    return None
 
 def generate_and_send_saga(target_chat_id=None):
     try:

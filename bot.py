@@ -8,7 +8,7 @@ import threading
 import random
 import asyncio
 import edge_tts
-import urllib.parse  # НОВЫЙ ИМПОРТ ДЛЯ КАРТИНОК
+import urllib.parse
 from flask import Flask
 from datetime import datetime
 
@@ -16,7 +16,6 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
-# Ключ Hugging Face больше не нужен!
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
@@ -43,7 +42,7 @@ subscribers = set()
 if YOUR_CHAT_ID:
     subscribers.add(YOUR_CHAT_ID)
 
-# --- АТМОСФЕРНЫЕ ФРАЗЫ ---
+# --- ФРАЗЫ ---
 WAIT_PHRASES = [
     "🦅 Хугин и Мунин полетели за историей...",
     "⏳ Норны сплетают нить, жди...",
@@ -80,12 +79,7 @@ SYSTEM_PROMPT_TEXT = """
 SYSTEM_PROMPT_VOICE = "Напиши атмосферное вступление (2-3 предложения) от лица старого викинга. На русском."
 SYSTEM_PROMPT_IMAGE = "Cinematic digital art, epic Norse mythology scene, dramatic lighting, 8k. Topic: "
 SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь смертному мудро, кратко (4 предл.), метафорично. СТРОГО НА РУССКОМ. Вопрос: "
-
-SYSTEM_PROMPT_RUNE = """
-Ты — Шаман. Выпала Руна: {rune}.
-Дай краткое (3-4 предложения), мистическое толкование для воина, который ищет ответ прямо сейчас.
-Отвечай СТРОГО НА РУССКОМ ЯЗЫКЕ.
-"""
+SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай краткое (3-4 предл.) толкование. СТРОГО НА РУССКОМ."
 
 # --- ФУНКЦИИ ---
 def clean_text(text):
@@ -128,36 +122,47 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
+# Функция получения ссылки на картинку (Pollinations)
+def get_pollinations_url(prompt):
+    encoded_prompt = urllib.parse.quote(prompt)
+    # Добавляем seed, чтобы картинки были разными каждый раз
+    seed = random.randint(1, 100000)
+    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
+
 def generate_and_send_saga(target_chat_id=None):
     try:
         topic, src = get_topic()
         targets = [target_chat_id] if target_chat_id else subscribers
         
-        # --- НОВАЯ БЕСПЛАТНАЯ ГЕНЕРАЦИЯ КАРТИНОК ---
+        # 1. Ссылка на картинку
         try: img_p = model.generate_content(f"SD prompt for: {topic}").text
         except: img_p = SYSTEM_PROMPT_IMAGE + topic
-        
-        encoded_prompt = urllib.parse.quote(img_p)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
-        resp_img = requests.get(image_url)
-        # ---------------------------------------------
+        image_url = get_pollinations_url(img_p)
 
+        # 2. Голос
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
         asyncio.run(generate_voice_file(v_text, fname))
         
+        # 3. Текст
         story = clean_text(model.generate_content(f"{SYSTEM_PROMPT_TEXT} {topic}").text)
 
         for chat_id in targets:
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
-                if resp_img.status_code == 200: bot.send_photo(chat_id, resp_img.content)
+                # ОТПРАВЛЯЕМ ССЫЛКУ, А НЕ ФАЙЛ (БЫСТРЕЕ)
+                bot.send_photo(chat_id, image_url)
+                
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
                 smart_split_and_send(chat_id, story)
-            except: pass
+            except Exception as e:
+                print(f"Ошибка отправки юзеру {chat_id}: {e}")
+
         if os.path.exists(fname): os.remove(fname)
-    except Exception as e: print(f"Err saga: {e}")
+
+    except Exception as e: 
+        print(f"CRITICAL ERROR SAGA: {e}")
 
 def generate_and_send_rune(target_chat_id=None):
     try:
@@ -165,14 +170,10 @@ def generate_and_send_rune(target_chat_id=None):
         prompt = SYSTEM_PROMPT_RUNE.format(rune=rune)
         prediction = clean_text(model.generate_content(prompt).text)
         
+        # Промпт для картинки
         rune_name_eng = rune.split('(')[1].split(')')[0]
         img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
-        
-        # --- НОВАЯ БЕСПЛАТНАЯ ГЕНЕРАЦИЯ КАРТИНОК ---
-        encoded_prompt = urllib.parse.quote(img_prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
-        resp = requests.get(image_url)
-        # ---------------------------------------------
+        image_url = get_pollinations_url(img_prompt)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
@@ -183,12 +184,14 @@ def generate_and_send_rune(target_chat_id=None):
                 else:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                if resp.status_code == 200:
-                    bot.send_photo(user_id, resp.content, caption=f"**{rune}**", parse_mode="Markdown")
-                
+                # ОТПРАВЛЯЕМ ССЫЛКУ
+                bot.send_photo(user_id, image_url, caption=f"**{rune}**", parse_mode="Markdown")
                 bot.send_message(user_id, f"👁️ **Толкование:**\n\n{prediction}", parse_mode="Markdown")
-            except: pass
-    except Exception as e: print(f"Err rune: {e}")
+            except Exception as e:
+                print(f"Ошибка отправки руны юзеру {user_id}: {e}")
+
+    except Exception as e: 
+        print(f"CRITICAL ERROR RUNE: {e}")
 
 def ask_odin_step(message):
     if message.text in ["📜 Расскажи Сагу", "🔮 Спросить Одина", "ᛟ Вытянуть Руну", "/start"]:

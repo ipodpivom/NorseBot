@@ -10,7 +10,7 @@ import asyncio
 import edge_tts
 import urllib.parse
 import io
-from flask import Flask
+from flask import Flask, request
 from datetime import datetime
 
 # --- КЛЮЧИ ---
@@ -256,9 +256,24 @@ def on_oracle_click(m):
 
 # --- SERVER & SCHEDULER ---
 server = Flask(__name__)
+
+# Render автоматически выдает эту переменную окружения (например, https://norsebot.onrender.com)
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") 
+
+# Сюда Telegram будет присылать сообщения
+@server.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
+def receive_update():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "!", 200
+    return "Not JSON", 403
+
+# Заглушка для Render, чтобы он видел, что сайт работает
 @server.route("/")
-def webhook(): return "OK", 200
-def run_server(): server.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+def index():
+    return "Сервис работает! 🛡️ Webhook активен.", 200
 
 def scheduler():
     while True:
@@ -272,8 +287,23 @@ def scheduler():
         time.sleep(30)
 
 if __name__ == "__main__":
+    # 1. Снимаем старые настройки (очищаем кэш Telegram)
     try: bot.remove_webhook()
     except: pass
-    threading.Thread(target=run_server, daemon=True).start()
+    time.sleep(1)
+
+    # 2. Устанавливаем Webhook, если мы на сервере Render
+    if WEBHOOK_URL:
+        bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
+        print(f"✅ Вебхук успешно установлен на: {WEBHOOK_URL}")
+    else:
+        # Если ты запустишь бота у себя на компе, он по-прежнему будет работать через Polling
+        print("⚠️ RENDER_EXTERNAL_URL не найден. Запускаю локальный Polling...")
+        threading.Thread(target=bot.infinity_polling, daemon=True).start()
+
+    # 3. Запускаем планировщик в фоне
     threading.Thread(target=scheduler, daemon=True).start()
-    bot.infinity_polling()
+
+    # 4. Запускаем сам веб-сервер (теперь он главный процесс)
+    port = int(os.environ.get("PORT", 10000))
+    server.run(host="0.0.0.0", port=port)

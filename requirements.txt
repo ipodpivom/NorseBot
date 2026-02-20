@@ -6,3 +6,4 @@ asyncio
 certifi
 flask
 gunicorn
+duckduckgo-search

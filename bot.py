@@ -9,7 +9,7 @@ import random
 import asyncio
 import edge_tts
 import urllib.parse
-import io  # НОВЫЙ ИМПОРТ ДЛЯ КАРТИНОК
+import io
 from flask import Flask
 from datetime import datetime
 
@@ -127,16 +127,18 @@ def get_pollinations_url(prompt):
     seed = random.randint(1, 100000)
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
 
-# --- НОВАЯ ФУНКЦИЯ СКАЧИВАНИЯ С МАСКИРОВКОЙ ---
 def download_image(url):
-    # Притворяемся браузером Chrome, чтобы нас не блокировали
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
     try:
+        print(f"🌐 Пробую скачать картинку: {url}")
         resp = requests.get(url, headers=headers, timeout=60)
+        print(f"📥 Ответ от сервера картинок: {resp.status_code}")
         if resp.status_code == 200:
             return resp.content
+        else:
+            print("⚠️ Сервер картинок заблокировал загрузку (Cloudflare).")
     except Exception as e:
-        print(f"Ошибка сети при скачивании картинки: {e}")
+        print(f"⚠️ Ошибка сети при скачивании: {e}")
     return None
 
 def generate_and_send_saga(target_chat_id=None):
@@ -159,8 +161,15 @@ def generate_and_send_saga(target_chat_id=None):
         for chat_id in targets:
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
+                
+                # Запасной план для картинки
                 if img_data:
                     bot.send_photo(chat_id, io.BytesIO(img_data))
+                else:
+                    try:
+                        print("🔄 Пробуем отправить ссылку напрямую в Телеграм...")
+                        bot.send_photo(chat_id, image_url)
+                    except: pass
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -196,11 +205,16 @@ def generate_and_send_rune(target_chat_id=None):
                 if not target_chat_id:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
+                # ЗАПАСНОЙ ПЛАН: Если Render не смог, просим Телеграм скачать по ссылке
                 if img_data:
-                    # Используем io.BytesIO - Телеграм это любит
                     bot.send_photo(user_id, io.BytesIO(img_data), caption=f"*{rune}*", parse_mode="Markdown")
                 else:
-                    bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
+                    try:
+                        print("🔄 Пробуем отправить ссылку напрямую в Телеграм...")
+                        bot.send_photo(user_id, image_url, caption=f"*{rune}*", parse_mode="Markdown")
+                    except Exception as e:
+                        print(f"❌ Телеграм тоже не смог скачать картинку: {e}")
+                        bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:

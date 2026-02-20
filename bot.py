@@ -20,7 +20,7 @@ YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
-TIME_RUNE_UTC = 4  # 6:00 Киев (или 7:00 в зависимости от летнего времени)
+TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
 # Инициализируем клиент Gemini
@@ -131,7 +131,7 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК
+# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК (С УМНЫМ ДЕТЕКТОРОМ ФЕЙКОВ)
 def generate_image(prompt, mode="instant"):
     headers = {'User-Agent': 'Mozilla/5.0'}
 
@@ -158,8 +158,15 @@ def generate_image(prompt, mode="instant"):
             print(f"⏳ [Airforce] Генерирую новую картинку...", flush=True)
             airforce_url = f"https://api.airforce/v1/imagine?prompt={urllib.parse.quote(prompt)}&size=1:1"
             air_resp = requests.get(airforce_url, headers=headers, timeout=60)
+            
             if air_resp.status_code == 200 and len(air_resp.content) > 1000:
-                print("✅ [Airforce] Картинка успешно сгенерирована!", flush=True)
+                # 🔥 ДЕТЕКТОР ФЕЙКОВ: Проверяем первые байты файла
+                content_start = air_resp.content[:20].lower()
+                if b'<!doctype' in content_start or b'<html' in content_start:
+                    print("⚠️ [Airforce] Подсунул HTML-заглушку вместо картинки! Брак.", flush=True)
+                    return None
+                    
+                print("✅ [Airforce] Настоящая картинка успешно сгенерирована!", flush=True)
                 return air_resp.content
         except Exception as e:
             print(f"❌ Ошибка Airforce: {e}", flush=True)
@@ -174,16 +181,16 @@ def generate_image(prompt, mode="instant"):
 
     elif mode == "scheduled":
         print("🕰 Режим Scheduled (по таймеру) - Фоновая генерация", flush=True)
-        # Для расписания мы можем подождать. Делаем 3 попытки генерации.
+        # Делаем 3 попытки, если Airforce подсовывает брак
         for attempt in range(1, 4):
             print(f"🔄 Попытка генерации {attempt}/3...", flush=True)
             img = get_airforce()
             if img: return img
             if attempt < 3:
-                print("💤 Сервер генерации занят, ждем 20 секунд...", flush=True)
+                print("💤 Сервер Airforce выдал брак или занят, ждем 20 секунд...", flush=True)
                 time.sleep(20)
         
-        print("⚠️ Генератор не справился, беру резервную картинку из Lexica...", flush=True)
+        print("⚠️ Airforce не справился за 3 попытки, беру резервную картинку из Lexica...", flush=True)
         return get_lexica()
 
     return None
@@ -198,7 +205,6 @@ def generate_and_send_saga(target_chat_id=None, mode="instant"):
         except: 
             img_p = "epic viking norse mythology cinematic"
         
-        # Передаем режим работы
         img_data = generate_image(img_p, mode=mode)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
@@ -211,23 +217,40 @@ def generate_and_send_saga(target_chat_id=None, mode="instant"):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
+                photo_sent = False
                 if img_data:
-                    photo = io.BytesIO(img_data)
-                    photo.name = 'image.jpg'
-                    bot.send_photo(chat_id, photo)
-                else:
-                    bot.send_message(chat_id, "*(Картинка потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
+                    try:
+                        photo = io.BytesIO(img_data)
+                        photo.name = 'image.jpg'
+                        bot.send_photo(chat_id, photo)
+                        photo_sent = True
+                    except Exception as img_e:
+                        print(f"❌ ТГ отклонил картинку Саги: {img_e}", flush=True)
+                        bot.send_message(chat_id, "🌪 *Видение обрывается... Норны ткут новый узор, подожди...*", parse_mode="Markdown")
+                        bot.send_chat_action(chat_id, 'typing')
+                        
+                        reserve_img = generate_image(img_p, mode="instant")
+                        if reserve_img:
+                            try:
+                                res_photo = io.BytesIO(reserve_img)
+                                res_photo.name = 'image.jpg'
+                                bot.send_photo(chat_id, res_photo)
+                                photo_sent = True
+                            except: pass
+                
+                if not photo_sent:
+                    bot.send_message(chat_id, "*(Картинка окончательно потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
                 smart_split_and_send(chat_id, story)
             except Exception as e:
-                print(f"Ошибка отправки юзеру: {e}")
+                print(f"❌ Ошибка отправки Саги юзеру: {e}", flush=True)
 
         if os.path.exists(fname): os.remove(fname)
 
     except Exception as e: 
-        print(f"CRITICAL ERROR SAGA: {e}")
+        print(f"❌ CRITICAL ERROR SAGA: {e}", flush=True)
 
 def generate_and_send_rune(target_chat_id=None, mode="instant"):
     try:
@@ -240,9 +263,8 @@ def generate_and_send_rune(target_chat_id=None, mode="instant"):
         prediction = clean_text(model.generate_content(prompt).text)
         
         rune_name_eng = rune.split('(')[1].split(')')[0]
-        
         img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
-        # Передаем режим работы
+        
         img_data = generate_image(img_prompt, mode=mode)
         
         targets = [target_chat_id] if target_chat_id else subscribers
@@ -252,19 +274,36 @@ def generate_and_send_rune(target_chat_id=None, mode="instant"):
                 if not target_chat_id:
                     bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
+                photo_sent = False
                 if img_data:
-                    photo = io.BytesIO(img_data)
-                    photo.name = 'rune.jpg'
-                    bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
-                else:
-                    bot.send_message(user_id, f"*{rune}*", parse_mode="Markdown")
+                    try:
+                        photo = io.BytesIO(img_data)
+                        photo.name = 'rune.jpg'
+                        bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
+                        photo_sent = True
+                    except Exception as img_e:
+                        print(f"❌ ТГ отклонил картинку Руны: {img_e}", flush=True)
+                        bot.send_message(user_id, "🌫 *Туман скрывает истинный облик твоей руны... Взываю к древним духам снова...*", parse_mode="Markdown")
+                        bot.send_chat_action(user_id, 'typing')
+                        
+                        reserve_img = generate_image(img_prompt, mode="instant")
+                        if reserve_img:
+                            try:
+                                res_photo = io.BytesIO(reserve_img)
+                                res_photo.name = 'rune.jpg'
+                                bot.send_photo(user_id, res_photo, caption=f"*{rune}*", parse_mode="Markdown")
+                                photo_sent = True
+                            except: pass
+
+                if not photo_sent:
+                    bot.send_message(user_id, f"*(Изображение утеряно в веках)*\n*{rune}*", parse_mode="Markdown")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:
-                print(f"Ошибка отправки руны: {e}")
+                print(f"❌ Ошибка отправки Руны юзеру: {e}", flush=True)
 
     except Exception as e: 
-        print(f"CRITICAL ERROR RUNE: {e}")
+        print(f"❌ CRITICAL ERROR RUNE: {e}", flush=True)
 
 def ask_odin_step(message):
     if message.text in ["📜 Расскажи Сагу", "🔮 Спросить Одина", "ᛟ Вытянуть Руну", "/start"]:
@@ -290,7 +329,7 @@ def on_saga_click(m):
 
 @bot.message_handler(func=lambda m: m.text == "ᛟ Вытянуть Руну")
 def on_rune_click(m):
-    # ВРЕМЕННО включили режим таймера для теста!
+    # 🔥 ВРЕМЕННО СТОИТ SCHEDULED ДЛЯ ТЕСТА ОТЛОЖЕННОЙ ГЕНЕРАЦИИ
     threading.Thread(target=generate_and_send_rune, args=(m.chat.id, "scheduled")).start()
 
 @bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
@@ -300,8 +339,6 @@ def on_oracle_click(m):
 
 # --- SERVER & SCHEDULER ---
 server = Flask(__name__)
-
-# Render автоматически выдает эту переменную окружения
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") 
 
 @server.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
@@ -320,9 +357,6 @@ def index():
 def scheduler():
     while True:
         now = datetime.now()
-        # Запускаем в 00 минут. 
-        # Бот спокойно, в фоне (scheduled), потратит ~30-60 сек на генерацию
-        # и пост придет в канал ровно в 7:01, как ты и хотел!
         if now.hour == TIME_RUNE_UTC and now.minute == 0:
             generate_and_send_rune(mode="scheduled") 
             time.sleep(61)

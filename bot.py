@@ -10,6 +10,7 @@ import asyncio
 import edge_tts
 import urllib.parse
 import io
+import cloudscraper
 from flask import Flask, request
 from datetime import datetime
 
@@ -140,24 +141,25 @@ def get_pollinations_url(prompt):
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
 
 def download_image(url):
-    # Оборачиваем нашу ссылку в бесплатный прокси, чтобы "спрятать" Render от Cloudflare
-    proxy_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(url)}"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'image/jpeg, image/png, image/*'
-    }
-    
     try:
-        print(f"⏳ Пробую скачать картинку через прокси...", flush=True)
-        resp = requests.get(proxy_url, headers=headers, timeout=60)
+        print(f"⏳ Пробую пробить Cloudflare через cloudscraper...", flush=True)
         
-        # Проверяем, что код 200 (успех) и файл весит больше 1000 байт (чтобы случайно не скачать текст ошибки)
+        # Создаем "хитрый" клиент, который имитирует реальный Chrome
+        scraper = cloudscraper.create_scraper(browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        })
+        
+        resp = scraper.get(url, timeout=60)
+        
+        # Проверяем, что файл скачался и это не кусок текста с ошибкой
         if resp.status_code == 200 and len(resp.content) > 1000:
-            print("✅ Картинка успешно скачана в обход блокировки!", flush=True)
+            print("✅ Защита пробита! Картинка у нас.", flush=True)
             return resp.content
         else:
-            print(f"❌ Ошибка прокси HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
+            print(f"❌ Ошибка HTTP: {resp.status_code}. Ответ: {resp.text[:100]}", flush=True)
+            
     except Exception as e:
         print(f"❌ Критическая ошибка скачивания: {e}", flush=True)
         

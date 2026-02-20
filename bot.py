@@ -17,17 +17,15 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
-DEEPAI_API_KEY = os.environ.get("DEEPAI_API_KEY") # <--- ДОБАВЬ ЭТУ СТРОКУ
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
-TIME_RUNE_UTC = 4  # 6:00 Киев
+TIME_RUNE_UTC = 4  # 6:00 Киев (или 7:00 в зависимости от летнего времени)
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
-# Инициализируем новый клиент Gemini
+# Инициализируем клиент Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Создаем хитрую заглушку, чтобы твой старый код ниже работал без изменений
 class ModelMock:
     def generate_content(self, prompt):
         class ResponseMock:
@@ -90,7 +88,6 @@ SYSTEM_PROMPT_TEXT = """
 """
 
 SYSTEM_PROMPT_VOICE = "Напиши атмосферное вступление (2-3 предложения) от лица старого викинга. На русском."
-SYSTEM_PROMPT_IMAGE = "Cinematic digital art, epic Norse mythology scene, dramatic lighting, 8k. Topic: "
 SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь смертному мудро, кратко (4 предл.), метафорично. СТРОГО НА РУССКОМ. Вопрос: "
 SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай краткое (3-4 предл.) толкование. СТРОГО НА РУССКОМ."
 
@@ -134,50 +131,75 @@ def get_main_keyboard():
     markup.add(btn1, btn2, btn3)
     return markup
 
-def generate_image(prompt):
-    try:
-        print(f"⏳ Генерирую картинку через DeepAI...", flush=True)
+# 🔥 ГИБРИДНАЯ ФУНКЦИЯ ДЛЯ КАРТИНОК
+def generate_image(prompt, mode="instant"):
+    headers = {'User-Agent': 'Mozilla/5.0'}
+
+    def get_lexica():
+        try:
+            print(f"⏳ [Lexica] Ищу готовый арт...", flush=True)
+            url = f"https://lexica.art/api/v1/search?q={urllib.parse.quote(prompt)}"
+            resp = requests.get(url, headers=headers, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and "images" in data and len(data["images"]) > 0:
+                    top_images = data["images"][:3]
+                    image_url = random.choice(top_images)["src"]
+                    img_resp = requests.get(image_url, headers=headers, timeout=20)
+                    if img_resp.status_code == 200:
+                        print("✅ [Lexica] Арт найден и скачан!", flush=True)
+                        return img_resp.content
+        except Exception as e:
+            print(f"❌ Ошибка Lexica: {e}", flush=True)
+        return None
+
+    def get_airforce():
+        try:
+            print(f"⏳ [Airforce] Генерирую новую картинку...", flush=True)
+            airforce_url = f"https://api.airforce/v1/imagine?prompt={urllib.parse.quote(prompt)}&size=1:1"
+            air_resp = requests.get(airforce_url, headers=headers, timeout=60)
+            if air_resp.status_code == 200 and len(air_resp.content) > 1000:
+                print("✅ [Airforce] Картинка успешно сгенерирована!", flush=True)
+                return air_resp.content
+        except Exception as e:
+            print(f"❌ Ошибка Airforce: {e}", flush=True)
+        return None
+
+    if mode == "instant":
+        print("⚡ Режим Instant (по кнопке) - Быстрый поиск", flush=True)
+        img = get_lexica()
+        if img: return img
+        print("⚠️ Lexica пуста, запускаю быструю генерацию...", flush=True)
+        return get_airforce()
+
+    elif mode == "scheduled":
+        print("🕰 Режим Scheduled (по таймеру) - Фоновая генерация", flush=True)
+        # Для расписания мы можем подождать. Делаем 3 попытки генерации.
+        for attempt in range(1, 4):
+            print(f"🔄 Попытка генерации {attempt}/3...", flush=True)
+            img = get_airforce()
+            if img: return img
+            if attempt < 3:
+                print("💤 Сервер генерации занят, ждем 20 секунд...", flush=True)
+                time.sleep(20)
         
-        if not DEEPAI_API_KEY:
-            print("❌ Ошибка: Не найден DEEPAI_API_KEY в настройках!", flush=True)
-            return None
-            
-        # Отправляем запрос к официальному API DeepAI
-        r = requests.post(
-            "https://api.deepai.org/api/text2img",
-            data={'text': prompt},
-            headers={'api-key': DEEPAI_API_KEY},
-            timeout=60
-        )
-        
-        if r.status_code == 200:
-            data = r.json()
-            if "output_url" in data:
-                image_url = data["output_url"]
-                print(f"✅ Ссылка получена! Скачиваю картинку...", flush=True)
-                
-                # Скачиваем саму картинку, чтобы отправить ее файлом в Телеграм
-                img_resp = requests.get(image_url, timeout=60)
-                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                    print("✅ Картинка успешно загружена в память!", flush=True)
-                    return img_resp.content
-        else:
-            print(f"❌ Ошибка DeepAI HTTP: {r.status_code}. Ответ: {r.text[:100]}", flush=True)
-            
-    except Exception as e:
-        print(f"❌ Критическая ошибка генерации: {e}", flush=True)
-        
+        print("⚠️ Генератор не справился, беру резервную картинку из Lexica...", flush=True)
+        return get_lexica()
+
     return None
 
-def generate_and_send_saga(target_chat_id=None):
+def generate_and_send_saga(target_chat_id=None, mode="instant"):
     try:
         topic, src = get_topic()
         targets = [target_chat_id] if target_chat_id else subscribers
         
-        try: img_p = model.generate_content(f"SD prompt for: {topic}").text
-        except: img_p = SYSTEM_PROMPT_IMAGE + topic
+        try: 
+            img_p = clean_text(model.generate_content(f"Translate to English and give 3-4 keywords for image search, NO extra text: {topic}").text)
+        except: 
+            img_p = "epic viking norse mythology cinematic"
         
-        img_data = generate_image(img_p)
+        # Передаем режим работы
+        img_data = generate_image(img_p, mode=mode)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -207,7 +229,7 @@ def generate_and_send_saga(target_chat_id=None):
     except Exception as e: 
         print(f"CRITICAL ERROR SAGA: {e}")
 
-def generate_and_send_rune(target_chat_id=None):
+def generate_and_send_rune(target_chat_id=None, mode="instant"):
     try:
         if target_chat_id: 
             bot.send_message(target_chat_id, random.choice(RUNE_ACTION_PHRASES))
@@ -218,9 +240,10 @@ def generate_and_send_rune(target_chat_id=None):
         prediction = clean_text(model.generate_content(prompt).text)
         
         rune_name_eng = rune.split('(')[1].split(')')[0]
-        img_prompt = f"Close up shot of an old dirty viking hand holding a dark runestone, glowing blue symbol of rune {rune_name_eng} carved on stone, cinematic lighting, photorealistic, 8k, bokeh background"
         
-        img_data = generate_image(img_prompt)
+        img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
+        # Передаем режим работы
+        img_data = generate_image(img_prompt, mode=mode)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         
@@ -263,11 +286,12 @@ def start(m):
 @bot.message_handler(func=lambda m: m.text == "📜 Расскажи Сагу")
 def on_saga_click(m):
     bot.send_message(m.chat.id, random.choice(WAIT_PHRASES))
-    threading.Thread(target=generate_and_send_saga, args=(m.chat.id,)).start()
+    threading.Thread(target=generate_and_send_saga, args=(m.chat.id, "instant")).start()
 
 @bot.message_handler(func=lambda m: m.text == "ᛟ Вытянуть Руну")
 def on_rune_click(m):
-    threading.Thread(target=generate_and_send_rune, args=(m.chat.id,)).start()
+    # ВРЕМЕННО включили режим таймера для теста!
+    threading.Thread(target=generate_and_send_rune, args=(m.chat.id, "scheduled")).start()
 
 @bot.message_handler(func=lambda m: m.text == "🔮 Спросить Одина")
 def on_oracle_click(m):
@@ -280,7 +304,6 @@ server = Flask(__name__)
 # Render автоматически выдает эту переменную окружения
 WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL") 
 
-# Сюда Telegram будет присылать сообщения
 @server.route(f"/{TELEGRAM_TOKEN}", methods=['POST'])
 def receive_update():
     if request.headers.get('content-type') == 'application/json':
@@ -290,7 +313,6 @@ def receive_update():
         return "!", 200
     return "Not JSON", 403
 
-# Заглушка для Render, чтобы он видел, что сайт работает
 @server.route("/")
 def index():
     return "Сервис работает! 🛡️ Webhook активен.", 200
@@ -298,32 +320,30 @@ def index():
 def scheduler():
     while True:
         now = datetime.now()
+        # Запускаем в 00 минут. 
+        # Бот спокойно, в фоне (scheduled), потратит ~30-60 сек на генерацию
+        # и пост придет в канал ровно в 7:01, как ты и хотел!
         if now.hour == TIME_RUNE_UTC and now.minute == 0:
-            generate_and_send_rune() 
+            generate_and_send_rune(mode="scheduled") 
             time.sleep(61)
         elif now.hour == TIME_SAGA_UTC and now.minute == 0:
-            generate_and_send_saga() 
+            generate_and_send_saga(mode="scheduled") 
             time.sleep(61)  
         time.sleep(30)
 
 if __name__ == "__main__":
-    # 1. Снимаем старые настройки (очищаем кэш Telegram)
     try: bot.remove_webhook()
     except: pass
     time.sleep(1)
 
-    # 2. Устанавливаем Webhook, если мы на сервере Render
     if WEBHOOK_URL:
         bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
         print(f"✅ Вебхук успешно установлен на: {WEBHOOK_URL}")
     else:
-        # Если ты запустишь бота у себя на компе, он по-прежнему будет работать через Polling
         print("⚠️ RENDER_EXTERNAL_URL не найден. Запускаю локальный Polling...")
         threading.Thread(target=bot.infinity_polling, daemon=True).start()
 
-    # 3. Запускаем планировщик в фоне
     threading.Thread(target=scheduler, daemon=True).start()
 
-    # 4. Запускаем сам веб-сервер (теперь он главный процесс)
     port = int(os.environ.get("PORT", 10000))
     server.run(host="0.0.0.0", port=port)

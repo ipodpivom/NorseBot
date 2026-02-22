@@ -36,7 +36,7 @@ class ModelMock:
 model = ModelMock()
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# --- РЕЗЕРВНЫЙ СЛОВАРЬ (Используем надежный placehold.co) ---
+# --- РЕЗЕРВНЫЙ СЛОВАРЬ (Надежный placehold.co) ---
 RUNE_FALLBACKS = {
     "Феху (Fehu) - Богатство": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Fehu",
     "Уруз (Uruz) - Сила": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Uruz",
@@ -139,25 +139,39 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-# 🔥 ТВОЯ ИДЕЯ С ХАБОМ (ПРОКСИ) ДЛЯ ОБХОДА БЛОКИРОВОК
-def download_image_via_hub(ai_url, fallback_url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    
+# 🔥 3-СТУПЕНЧАТАЯ ЗАЩИТА СКАЧИВАНИЯ КАРТИНОК
+def download_image_robust(ai_url, fallback_url):
+    # Притворяемся настоящим браузером, чтобы нас не блокировали
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
+    }
+
+    # Шаг 1: Пытаемся скачать напрямую (самый быстрый и надежный путь)
     try:
-        print("⏳ Хаб качает ИИ-картинку...", flush=True)
-        # Заворачиваем ссылку ИИ в наш прокси-хаб
-        hub_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(ai_url)}"
-        resp = requests.get(hub_url, headers=headers, timeout=30)
-        
+        print("⏳ Шаг 1: Прямое скачивание ИИ-картинки...", flush=True)
+        resp = requests.get(ai_url, headers=headers, timeout=25)
         if resp.status_code == 200 and len(resp.content) > 1000:
-            print("✅ ИИ-картинка успешно пропущена через Хаб!", flush=True)
+            print("✅ ИИ-картинка скачана напрямую!", flush=True)
             return resp.content
     except Exception as e:
-        print(f"⚠️ Хаб не смог получить ИИ-картинку: {e}", flush=True)
+        print(f"⚠️ Прямое скачивание не удалось: {e}", flush=True)
 
+    # Шаг 2: Пробуем через новый прокси-сервер (если шаг 1 заблокирован)
     try:
-        print("⏳ Качаю резервную картинку...", flush=True)
-        resp = requests.get(fallback_url, headers=headers, timeout=15)
+        print("⏳ Шаг 2: Скачивание ИИ-картинки через прокси...", flush=True)
+        proxy_url = f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(ai_url)}"
+        resp = requests.get(proxy_url, headers=headers, timeout=30)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            print("✅ ИИ-картинка успешно пропущена через прокси!", flush=True)
+            return resp.content
+    except Exception as e:
+        print(f"⚠️ Прокси не справился: {e}", flush=True)
+
+    # Шаг 3: Используем нашу стильную заглушку (если ИИ совсем умер)
+    try:
+        print("⏳ Шаг 3: Качаю резервную картинку...", flush=True)
+        resp = requests.get(fallback_url, headers=headers, timeout=10)
         if resp.status_code == 200:
             print("✅ Резервная картинка скачана!", flush=True)
             return resp.content
@@ -177,10 +191,10 @@ def generate_and_send_saga(target_chat_id=None):
             img_p = "epic viking norse mythology cinematic"
             
         ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_p)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
-        fallback_url = f"https://loremflickr.com/800/800/viking,mythology?random={random.randint(1, 10000)}"
+        fallback_url = f"https://loremflickr.com/800/800/viking,epic?random={random.randint(1, 10000)}"
 
-        # Запускаем загрузку через хаб
-        img_data = download_image_via_hub(ai_url, fallback_url)
+        # Вызываем нашу железобетонную функцию скачивания
+        img_data = download_image_robust(ai_url, fallback_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -219,12 +233,13 @@ def generate_and_send_rune(target_chat_id=None):
         prediction = clean_text(model.generate_content(prompt).text)
         rune_name_eng = rune.split('(')[1].split(')')[0]
         
+        # Специальный короткий промпт для нейросети, чтобы она не путалась
         img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
         ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_prompt)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
         fallback_url = RUNE_FALLBACKS[rune]
         
-        # Запускаем загрузку через хаб
-        img_data = download_image_via_hub(ai_url, fallback_url)
+        # Вызываем нашу железобетонную функцию скачивания
+        img_data = download_image_robust(ai_url, fallback_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         for user_id in targets:

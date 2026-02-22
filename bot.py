@@ -3,11 +3,13 @@ from telebot import types
 from google import genai
 import os
 import time
+import requests
 import threading
 import random
 import asyncio
 import edge_tts
 import urllib.parse
+import io
 from flask import Flask, request
 from datetime import datetime
 
@@ -34,7 +36,7 @@ class ModelMock:
 model = ModelMock()
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# --- РЕЗЕРВНЫЙ СЛОВАРЬ (На случай если ИИ генерирует слишком долго) ---
+# --- РЕЗЕРВНЫЙ СЛОВАРЬ ---
 RUNE_FALLBACKS = {
     "Феху (Fehu) - Богатство": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Fehu&font=museo",
     "Уруз (Uruz) - Сила": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Uruz&font=museo",
@@ -137,11 +139,51 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-# 🔥 ГЕНИАЛЬНЫЙ ОБХОД: Генерируем только ссылку, скачивает сам Telegram
 def get_ai_image_url(prompt):
     encoded_prompt = urllib.parse.quote(prompt)
     seed = random.randint(1, 1000000)
     return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
+
+# 🔥 НОВАЯ ФУНКЦИЯ: Скачивает картинку в память Render перед отправкой
+def download_and_send(chat_id, main_url, fallback_url, caption=None):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    try:
+        print("⏳ Render скачивает ИИ-картинку себе в память...", flush=True)
+        resp = requests.get(main_url, headers=headers, timeout=20)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            photo = io.BytesIO(resp.content)
+            photo.name = 'ai_image.jpg'
+            if caption:
+                bot.send_photo(chat_id, photo, caption=caption, parse_mode="Markdown")
+            else:
+                bot.send_photo(chat_id, photo)
+            print("✅ Файл картинки успешно передан в Телеграм!", flush=True)
+            return True
+    except Exception as e:
+        print(f"⚠️ ИИ-генератор не ответил: {e}", flush=True)
+
+    try:
+        print("⏳ Скачиваю резервную картинку в память...", flush=True)
+        resp = requests.get(fallback_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            photo = io.BytesIO(resp.content)
+            photo.name = 'fallback.jpg'
+            if caption:
+                bot.send_photo(chat_id, photo, caption=caption, parse_mode="Markdown")
+            else:
+                bot.send_photo(chat_id, photo)
+            print("✅ Резервный файл отправлен!", flush=True)
+            return True
+    except Exception as e:
+        print(f"❌ Полный провал скачивания: {e}", flush=True)
+        
+    # Если сломалось вообще всё (даже резерв)
+    if caption:
+        bot.send_message(chat_id, f"*(Изображение утеряно в веках)*\n{caption}", parse_mode="Markdown")
+    else:
+        bot.send_message(chat_id, "*(Картинка потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
+    return False
 
 def generate_and_send_saga(target_chat_id=None):
     try:
@@ -165,13 +207,8 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
-                # Заставляем ТГ скачать ИИ-картинку по ссылке
-                try:
-                    print("⏳ Отдаю ИИ-ссылку Телеграму для скачивания...", flush=True)
-                    bot.send_photo(chat_id, ai_url)
-                except Exception as e:
-                    print(f"⚠️ ТГ не дождался ИИ-картинки, шлю резервную: {e}", flush=True)
-                    bot.send_photo(chat_id, fallback_url)
+                # Вызываем нашу новую безопасную функцию отправки фото
+                download_and_send(chat_id, ai_url, fallback_url)
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -194,7 +231,6 @@ def generate_and_send_rune(target_chat_id=None):
         prediction = clean_text(model.generate_content(prompt).text)
         rune_name_eng = rune.split('(')[1].split(')')[0]
         
-        # Генерируем ссылку для ИИ и берем резервную из словаря
         img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
         ai_url = get_ai_image_url(img_prompt)
         fallback_url = RUNE_FALLBACKS[rune]
@@ -204,13 +240,8 @@ def generate_and_send_rune(target_chat_id=None):
             try:
                 if not target_chat_id: bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                # Заставляем ТГ скачать ИИ-картинку по ссылке
-                try:
-                    print(f"⏳ Отдаю ИИ-ссылку руны {rune_name_eng} Телеграму...", flush=True)
-                    bot.send_photo(user_id, ai_url, caption=f"*{rune}*", parse_mode="Markdown")
-                except Exception as e:
-                    print(f"⚠️ ТГ не дождался ИИ-картинки, шлю резервную из словаря: {e}", flush=True)
-                    bot.send_photo(user_id, fallback_url, caption=f"*{rune}*", parse_mode="Markdown")
+                # Вызываем нашу новую безопасную функцию отправки фото
+                download_and_send(user_id, ai_url, fallback_url, caption=f"*{rune}*")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:

@@ -17,6 +17,7 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
+LEONARDO_API_KEY = os.environ.get("LEONARDO_API_KEY") # ДОБАВЛЕН КЛЮЧ LEONARDO
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
 START_DATE = datetime(2026, 2, 8) 
@@ -109,50 +110,73 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-# 🔥 НОВАЯ ЖЕЛЕЗОБЕТОННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КАРТИНКИ
+# 🔥 ОБНОВЛЕННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КАРТИНКИ (Leonardo.ai API)
 def get_ai_image_bytes(prompt, fallback_url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers_req = {'User-Agent': 'Mozilla/5.0'}
     
-    # План А: Hercai API (Без ключей, отдает готовые ссылки без редиректов)
+    # План А: Leonardo.ai API
     try:
-        print("⏳ Шаг 1: Запрашиваю нейросеть через Hercai API...", flush=True)
-        hercai_url = f"https://hercai.onrender.com/v3/text2image?prompt={urllib.parse.quote(prompt)}"
-        resp = requests.get(hercai_url, headers=headers, timeout=30)
+        print("⏳ Шаг 1: Запрашиваю нейросеть через Leonardo.ai API...", flush=True)
+        if not LEONARDO_API_KEY:
+             raise ValueError("API-ключ Leonardo не найден в настройках.")
+
+        url_generate = "https://cloud.leonardo.ai/api/rest/v1/generations"
+        headers_leo = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "authorization": f"Bearer {LEONARDO_API_KEY}"
+        }
         
-        if resp.status_code == 200:
-            data = resp.json()
-            img_url = data.get("url")
-            if img_url:
-                print(f"✅ Hercai сгенерировал ссылку! Качаю: {img_url[:40]}...", flush=True)
-                img_resp = requests.get(img_url, headers=headers, timeout=20)
-                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                    print("✅ ИИ-картинка успешно скачана в память!", flush=True)
-                    return img_resp.content
-    except Exception as e:
-        print(f"⚠️ Hercai не справился: {e}", flush=True)
+        payload = {
+            "height": 512,
+            "width": 512,
+            "prompt": prompt,
+            "num_images": 1
+        }
+        
+        # 1. Запрос на генерацию
+        resp_gen = requests.post(url_generate, json=payload, headers=headers_leo, timeout=15)
+        resp_gen.raise_for_status()
+        generation_id = resp_gen.json().get("sdGenerationJob", {}).get("generationId")
+        
+        if generation_id:
+             print("⏳ Шаг 2: Картинка рисуется, ожидаю результат (около 10-15 сек)...", flush=True)
+             url_get = f"https://cloud.leonardo.ai/api/rest/v1/generations/{generation_id}"
+             
+             # 2. Опрашиваем сервер о готовности
+             for _ in range(10): # 10 попыток с паузой
+                 time.sleep(2)
+                 res = requests.get(url_get, headers=headers_leo, timeout=10)
+                 if res.status_code == 200:
+                     data = res.json()
+                     status = data.get("generations_by_pk", {}).get("status")
+                     if status == "COMPLETE":
+                         img_url = data["generations_by_pk"]["generated_images"][0]["url"]
+                         print("✅ Leonardo сгенерировал ссылку! Качаю...", flush=True)
+                         
+                         # 3. Скачиваем саму картинку в память
+                         img_resp = requests.get(img_url, headers=headers_req, timeout=20)
+                         if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                              print("✅ ИИ-картинка от Leonardo успешно скачана в память!", flush=True)
+                              return img_resp.content
+                         break # Выходим из цикла, если картинка готова, но не скачалась
+             else:
+                 print("⚠️ Превышено время ожидания готовности от Leonardo.", flush=True)
+        else:
+            print("⚠️ Leonardo не вернул ID генерации.", flush=True)
 
-    # План Б: Pollinations напрямую (вдруг он подобрел к нашему серверу)
-    try:
-        print("⏳ Шаг 2: Пробую Pollinations напрямую...", flush=True)
-        poll_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?nologo=true&seed={random.randint(1,100000)}"
-        resp = requests.get(poll_url, headers=headers, timeout=20)
-        if resp.status_code == 200 and len(resp.content) > 1000:
-            # Проверяем, не подсунул ли он нам HTML вместо картинки
-            if b'<!doctype' not in resp.content[:20].lower() and b'<html' not in resp.content[:20].lower():
-                print("✅ Pollinations пустил напрямую!", flush=True)
-                return resp.content
     except Exception as e:
-        print(f"⚠️ Pollinations тоже отбил запрос: {e}", flush=True)
+        print(f"⚠️ План А (Leonardo) провалился: {e}", flush=True)
 
-    # План В: Наша стильная заглушка (Graceful Degradation)
+    # План Б: Наша стильная заглушка (Graceful Degradation)
     try:
         print("⏳ Шаг 3: Качаю резервную картинку...", flush=True)
-        resp = requests.get(fallback_url, headers=headers, timeout=10)
+        resp = requests.get(fallback_url, headers=headers_req, timeout=10)
         if resp.status_code == 200:
             print("✅ Резервная картинка скачана!", flush=True)
             return resp.content
     except Exception as e:
-        print(f"❌ Полный провал всех скачиваний: {e}", flush=True)
+        print(f"❌ Полный провал всех скачиваний (даже резерва): {e}", flush=True)
         
     return None
 
@@ -168,7 +192,7 @@ def generate_and_send_saga(target_chat_id=None):
             
         fallback_url = f"https://placehold.co/800x800/1e293b/fbbf24.png?text=Viking+Saga"
         
-        # Запускаем нашу 3-х ступенчатую загрузку
+        # Запускаем загрузку картинки
         img_bytes = get_ai_image_bytes(img_p, fallback_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
@@ -211,7 +235,7 @@ def generate_and_send_rune(target_chat_id=None):
         img_prompt = f"close up glowing magic rune stone {rune_name_eng} lying on dark earth, viking cinematic lighting 8k"
         fallback_url = RUNE_FALLBACKS[rune]
         
-        # Запускаем нашу 3-х ступенчатую загрузку
+        # Запускаем загрузку картинки
         img_bytes = get_ai_image_bytes(img_prompt, fallback_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers

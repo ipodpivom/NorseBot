@@ -69,38 +69,16 @@ subscribers = set()
 if YOUR_CHAT_ID: subscribers.add(YOUR_CHAT_ID)
 
 # --- ФРАЗЫ ---
-WAIT_PHRASES = [
-    "🦅 Хугин и Мунин полетели за историей...",
-    "⏳ Норны сплетают нить, жди...",
-    "🍺 Скальд наливает мёд поэзии...",
-    "🌲 Шепот ветвей Иггдрасиля..."
-]
-
-START_PHRASES = [
-    "⚔️ Руны легли верно!",
-    "⚡ Тор ударил молотом!",
-    "📜 Сдуваю пыль со свитков...",
-    "🐺 Фенрир завыл..."
-]
-
-RUNE_ACTION_PHRASES = [
-    "🎲 Кости брошены на шкуру медведя...",
-    "✋ Рука Одина тянется в мешок судеб...",
-    "🌑 Камни шепчут во тьме...",
-    "👁️ Гляди внимательно, воин, это твой знак..."
-]
+WAIT_PHRASES = ["🦅 Хугин и Мунин полетели за историей...", "⏳ Норны сплетают нить, жди...", "🍺 Скальд наливает мёд поэзии..."]
+START_PHRASES = ["⚔️ Руны легли верно!", "⚡ Тор ударил молотом!", "🐺 Фенрир завыл..."]
+RUNE_ACTION_PHRASES = ["🎲 Кости брошены на шкуру медведя...", "✋ Рука Одина тянется...", "🌑 Камни шепчут во тьме..."]
 
 # --- ПРОМПТЫ ---
 SYSTEM_PROMPT_TOPIC_GEN = "Ты знаток мифов. Придумай одну редкую тему скандинавского фольклора. Только заголовок."
-SYSTEM_PROMPT_TEXT = """
-Ты — древний скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (объем 8000-9000 знаков).
-Пиши МАКСИМАЛЬНО ПОДРОБНО, с диалогами.
-СТРУКТУРА: 1. ЭТИМОЛОГИЯ, 2. МИФ (Детально), 3. СИМВОЛИЗМ, 4. СОВРЕМЕННОСТЬ.
-Не используй жирный шрифт. Тема: 
-"""
+SYSTEM_PROMPT_TEXT = "Ты — древний скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (объем 8000-9000 знаков). 1. ЭТИМОЛОГИЯ, 2. МИФ, 3. СИМВОЛИЗМ. Тема: "
 SYSTEM_PROMPT_VOICE = "Напиши атмосферное вступление (2-3 предложения) от лица старого викинга. На русском."
-SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь смертному мудро, кратко (4 предл.), метафорично. СТРОГО НА РУССКОМ. Вопрос: "
-SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай краткое (3-4 предл.) толкование. СТРОГО НА РУССКОМ."
+SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь мудро, кратко (4 предл.). СТРОГО НА РУССКОМ. Вопрос: "
+SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай краткое толкование. СТРОГО НА РУССКОМ."
 
 # --- ФУНКЦИИ ---
 def clean_text(text):
@@ -113,7 +91,6 @@ def smart_split_and_send(chat_id, text):
             bot.send_message(chat_id, text)
             break
         split_at = text.rfind('\n', 0, chunk_size)
-        if split_at == -1: split_at = text.rfind(' ', 0, chunk_size)
         if split_at == -1: split_at = chunk_size
         bot.send_message(chat_id, text[:split_at])
         text = text[split_at:].lstrip()
@@ -125,13 +102,6 @@ async def generate_voice_file(text, filename):
 
 def get_topic():
     day_index = (datetime.now() - START_DATE).days
-    if day_index < 0: day_index = 0
-    if os.path.exists("topics.txt"):
-        try:
-            with open("topics.txt", "r", encoding="utf-8") as f:
-                lines = [l.strip() for l in f if l.strip()]
-            if lines: return lines[day_index % len(lines)], f"📜 Свиток №{day_index % len(lines) + 1}"
-        except: pass
     return model.generate_content(SYSTEM_PROMPT_TOPIC_GEN).text.strip(), "🔮 Руны AI"
 
 def get_main_keyboard():
@@ -139,36 +109,42 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-# 🔥 3-СТУПЕНЧАТАЯ ЗАЩИТА СКАЧИВАНИЯ КАРТИНОК
-def download_image_robust(ai_url, fallback_url):
-    # Притворяемся настоящим браузером, чтобы нас не блокировали
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
-    }
-
-    # Шаг 1: Пытаемся скачать напрямую (самый быстрый и надежный путь)
+# 🔥 НОВАЯ ЖЕЛЕЗОБЕТОННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КАРТИНКИ
+def get_ai_image_bytes(prompt, fallback_url):
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    # План А: Hercai API (Без ключей, отдает готовые ссылки без редиректов)
     try:
-        print("⏳ Шаг 1: Прямое скачивание ИИ-картинки...", flush=True)
-        resp = requests.get(ai_url, headers=headers, timeout=25)
-        if resp.status_code == 200 and len(resp.content) > 1000:
-            print("✅ ИИ-картинка скачана напрямую!", flush=True)
-            return resp.content
+        print("⏳ Шаг 1: Запрашиваю нейросеть через Hercai API...", flush=True)
+        hercai_url = f"https://hercai.onrender.com/v3/text2image?prompt={urllib.parse.quote(prompt)}"
+        resp = requests.get(hercai_url, headers=headers, timeout=30)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            img_url = data.get("url")
+            if img_url:
+                print(f"✅ Hercai сгенерировал ссылку! Качаю: {img_url[:40]}...", flush=True)
+                img_resp = requests.get(img_url, headers=headers, timeout=20)
+                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                    print("✅ ИИ-картинка успешно скачана в память!", flush=True)
+                    return img_resp.content
     except Exception as e:
-        print(f"⚠️ Прямое скачивание не удалось: {e}", flush=True)
+        print(f"⚠️ Hercai не справился: {e}", flush=True)
 
-    # Шаг 2: Пробуем через новый прокси-сервер (если шаг 1 заблокирован)
+    # План Б: Pollinations напрямую (вдруг он подобрел к нашему серверу)
     try:
-        print("⏳ Шаг 2: Скачивание ИИ-картинки через прокси...", flush=True)
-        proxy_url = f"https://api.codetabs.com/v1/proxy?quest={urllib.parse.quote(ai_url)}"
-        resp = requests.get(proxy_url, headers=headers, timeout=30)
+        print("⏳ Шаг 2: Пробую Pollinations напрямую...", flush=True)
+        poll_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?nologo=true&seed={random.randint(1,100000)}"
+        resp = requests.get(poll_url, headers=headers, timeout=20)
         if resp.status_code == 200 and len(resp.content) > 1000:
-            print("✅ ИИ-картинка успешно пропущена через прокси!", flush=True)
-            return resp.content
+            # Проверяем, не подсунул ли он нам HTML вместо картинки
+            if b'<!doctype' not in resp.content[:20].lower() and b'<html' not in resp.content[:20].lower():
+                print("✅ Pollinations пустил напрямую!", flush=True)
+                return resp.content
     except Exception as e:
-        print(f"⚠️ Прокси не справился: {e}", flush=True)
+        print(f"⚠️ Pollinations тоже отбил запрос: {e}", flush=True)
 
-    # Шаг 3: Используем нашу стильную заглушку (если ИИ совсем умер)
+    # План В: Наша стильная заглушка (Graceful Degradation)
     try:
         print("⏳ Шаг 3: Качаю резервную картинку...", flush=True)
         resp = requests.get(fallback_url, headers=headers, timeout=10)
@@ -176,7 +152,7 @@ def download_image_robust(ai_url, fallback_url):
             print("✅ Резервная картинка скачана!", flush=True)
             return resp.content
     except Exception as e:
-        print(f"❌ Полный провал скачивания: {e}", flush=True)
+        print(f"❌ Полный провал всех скачиваний: {e}", flush=True)
         
     return None
 
@@ -186,15 +162,14 @@ def generate_and_send_saga(target_chat_id=None):
         targets = [target_chat_id] if target_chat_id else subscribers
         
         try: 
-            img_p = clean_text(model.generate_content(f"Translate to English and give 3-4 keywords for image search, NO extra text: {topic}").text)
+            img_p = clean_text(model.generate_content(f"Translate to English, NO extra text: epic cinematic dark fantasy viking {topic}").text)
         except: 
             img_p = "epic viking norse mythology cinematic"
             
-        ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_p)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
-        fallback_url = f"https://loremflickr.com/800/800/viking,epic?random={random.randint(1, 10000)}"
-
-        # Вызываем нашу железобетонную функцию скачивания
-        img_data = download_image_robust(ai_url, fallback_url)
+        fallback_url = f"https://placehold.co/800x800/1e293b/fbbf24.png?text=Viking+Saga"
+        
+        # Запускаем нашу 3-х ступенчатую загрузку
+        img_bytes = get_ai_image_bytes(img_p, fallback_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -205,8 +180,8 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
-                if img_data:
-                    photo = io.BytesIO(img_data)
+                if img_bytes:
+                    photo = io.BytesIO(img_bytes)
                     photo.name = 'saga.jpg'
                     bot.send_photo(chat_id, photo)
                 else:
@@ -233,21 +208,19 @@ def generate_and_send_rune(target_chat_id=None):
         prediction = clean_text(model.generate_content(prompt).text)
         rune_name_eng = rune.split('(')[1].split(')')[0]
         
-        # Специальный короткий промпт для нейросети, чтобы она не путалась
-        img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
-        ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_prompt)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
+        img_prompt = f"close up glowing magic rune stone {rune_name_eng} lying on dark earth, viking cinematic lighting 8k"
         fallback_url = RUNE_FALLBACKS[rune]
         
-        # Вызываем нашу железобетонную функцию скачивания
-        img_data = download_image_robust(ai_url, fallback_url)
+        # Запускаем нашу 3-х ступенчатую загрузку
+        img_bytes = get_ai_image_bytes(img_prompt, fallback_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         for user_id in targets:
             try:
                 if not target_chat_id: bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                if img_data:
-                    photo = io.BytesIO(img_data)
+                if img_bytes:
+                    photo = io.BytesIO(img_bytes)
                     photo.name = 'rune.jpg'
                     bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
                 else:
@@ -327,7 +300,6 @@ if __name__ == "__main__":
         bot.set_webhook(url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}")
         print(f"✅ Вебхук успешно установлен на: {WEBHOOK_URL}")
     else:
-        print("⚠️ RENDER_EXTERNAL_URL не найден. Запускаю локальный Polling...")
         threading.Thread(target=bot.infinity_polling, daemon=True).start()
 
     threading.Thread(target=scheduler, daemon=True).start()

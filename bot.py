@@ -36,32 +36,32 @@ class ModelMock:
 model = ModelMock()
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# --- РЕЗЕРВНЫЙ СЛОВАРЬ ---
+# --- РЕЗЕРВНЫЙ СЛОВАРЬ (Используем надежный placehold.co) ---
 RUNE_FALLBACKS = {
-    "Феху (Fehu) - Богатство": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Fehu&font=museo",
-    "Уруз (Uruz) - Сила": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Uruz&font=museo",
-    "Турисаз (Thurisaz) - Врата": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Thurisaz&font=museo",
-    "Ансуз (Ansuz) - Знание": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Ansuz&font=museo",
-    "Райдо (Raidho) - Путь": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Raidho&font=museo",
-    "Кеназ (Kenaz) - Огонь": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Kenaz&font=museo",
-    "Гебо (Gebo) - Дар": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Gebo&font=museo",
-    "Вуньо (Wunjo) - Радость": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Wunjo&font=museo",
-    "Хагалаз (Hagalaz) - Разрушение": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Hagalaz&font=museo",
-    "Наутиз (Nauthiz) - Нужда": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Nauthiz&font=museo",
-    "Иса (Isa) - Лед": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Isa&font=museo",
-    "Йера (Jera) - Урожай": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Jera&font=museo",
-    "Эйваз (Eihwaz) - Защита": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Eihwaz&font=museo",
-    "Перт (Perthro) - Тайна": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Perthro&font=museo",
-    "Альгиз (Algiz) - Защита высших сил": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Algiz&font=museo",
-    "Соулу (Sowilo) - Солнце": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Sowilo&font=museo",
-    "Тейваз (Tiwaz) - Воин": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Tiwaz&font=museo",
-    "Беркана (Berkana) - Рост": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Berkana&font=museo",
-    "Эваз (Ehwaz) - Движение": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Ehwaz&font=museo",
-    "Манназ (Mannaz) - Человек": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Mannaz&font=museo",
-    "Лагуз (Laguz) - Интуиция": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Laguz&font=museo",
-    "Ингуз (Inguz) - Плодородия": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Inguz&font=museo",
-    "Отал (Othala) - Наследие": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Othala&font=museo",
-    "Дагаз (Dagaz) - Прорыв": "https://fakeimg.pl/800x800/1e293b/fbbf24/?text=Dagaz&font=museo"
+    "Феху (Fehu) - Богатство": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Fehu",
+    "Уруз (Uruz) - Сила": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Uruz",
+    "Турисаз (Thurisaz) - Врата": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Thurisaz",
+    "Ансуз (Ansuz) - Знание": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Ansuz",
+    "Райдо (Raidho) - Путь": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Raidho",
+    "Кеназ (Kenaz) - Огонь": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Kenaz",
+    "Гебо (Gebo) - Дар": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Gebo",
+    "Вуньо (Wunjo) - Радость": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Wunjo",
+    "Хагалаз (Hagalaz) - Разрушение": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Hagalaz",
+    "Наутиз (Nauthiz) - Нужда": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Nauthiz",
+    "Иса (Isa) - Лед": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Isa",
+    "Йера (Jera) - Урожай": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Jera",
+    "Эйваз (Eihwaz) - Защита": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Eihwaz",
+    "Перт (Perthro) - Тайна": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Perthro",
+    "Альгиз (Algiz) - Защита высших сил": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Algiz",
+    "Соулу (Sowilo) - Солнце": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Sowilo",
+    "Тейваз (Tiwaz) - Воин": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Tiwaz",
+    "Беркана (Berkana) - Рост": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Berkana",
+    "Эваз (Ehwaz) - Движение": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Ehwaz",
+    "Манназ (Mannaz) - Человек": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Mannaz",
+    "Лагуз (Laguz) - Интуиция": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Laguz",
+    "Ингуз (Inguz) - Плодородия": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Inguz",
+    "Отал (Othala) - Наследие": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Othala",
+    "Дагаз (Dagaz) - Прорыв": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Dagaz"
 }
 RUNES = list(RUNE_FALLBACKS.keys())
 
@@ -139,51 +139,32 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-def get_ai_image_url(prompt):
-    encoded_prompt = urllib.parse.quote(prompt)
-    seed = random.randint(1, 1000000)
-    return f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
-
-# 🔥 НОВАЯ ФУНКЦИЯ: Скачивает картинку в память Render перед отправкой
-def download_and_send(chat_id, main_url, fallback_url, caption=None):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+# 🔥 ТВОЯ ИДЕЯ С ХАБОМ (ПРОКСИ) ДЛЯ ОБХОДА БЛОКИРОВОК
+def download_image_via_hub(ai_url, fallback_url):
+    headers = {'User-Agent': 'Mozilla/5.0'}
     
     try:
-        print("⏳ Render скачивает ИИ-картинку себе в память...", flush=True)
-        resp = requests.get(main_url, headers=headers, timeout=20)
+        print("⏳ Хаб качает ИИ-картинку...", flush=True)
+        # Заворачиваем ссылку ИИ в наш прокси-хаб
+        hub_url = f"https://api.allorigins.win/raw?url={urllib.parse.quote(ai_url)}"
+        resp = requests.get(hub_url, headers=headers, timeout=30)
+        
         if resp.status_code == 200 and len(resp.content) > 1000:
-            photo = io.BytesIO(resp.content)
-            photo.name = 'ai_image.jpg'
-            if caption:
-                bot.send_photo(chat_id, photo, caption=caption, parse_mode="Markdown")
-            else:
-                bot.send_photo(chat_id, photo)
-            print("✅ Файл картинки успешно передан в Телеграм!", flush=True)
-            return True
+            print("✅ ИИ-картинка успешно пропущена через Хаб!", flush=True)
+            return resp.content
     except Exception as e:
-        print(f"⚠️ ИИ-генератор не ответил: {e}", flush=True)
+        print(f"⚠️ Хаб не смог получить ИИ-картинку: {e}", flush=True)
 
     try:
-        print("⏳ Скачиваю резервную картинку в память...", flush=True)
-        resp = requests.get(fallback_url, headers=headers, timeout=10)
+        print("⏳ Качаю резервную картинку...", flush=True)
+        resp = requests.get(fallback_url, headers=headers, timeout=15)
         if resp.status_code == 200:
-            photo = io.BytesIO(resp.content)
-            photo.name = 'fallback.jpg'
-            if caption:
-                bot.send_photo(chat_id, photo, caption=caption, parse_mode="Markdown")
-            else:
-                bot.send_photo(chat_id, photo)
-            print("✅ Резервный файл отправлен!", flush=True)
-            return True
+            print("✅ Резервная картинка скачана!", flush=True)
+            return resp.content
     except Exception as e:
         print(f"❌ Полный провал скачивания: {e}", flush=True)
         
-    # Если сломалось вообще всё (даже резерв)
-    if caption:
-        bot.send_message(chat_id, f"*(Изображение утеряно в веках)*\n{caption}", parse_mode="Markdown")
-    else:
-        bot.send_message(chat_id, "*(Картинка потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
-    return False
+    return None
 
 def generate_and_send_saga(target_chat_id=None):
     try:
@@ -195,8 +176,11 @@ def generate_and_send_saga(target_chat_id=None):
         except: 
             img_p = "epic viking norse mythology cinematic"
             
-        ai_url = get_ai_image_url(img_p)
+        ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_p)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
         fallback_url = f"https://loremflickr.com/800/800/viking,mythology?random={random.randint(1, 10000)}"
+
+        # Запускаем загрузку через хаб
+        img_data = download_image_via_hub(ai_url, fallback_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
         fname = f"v_{random.randint(1,999)}.mp3"
@@ -207,8 +191,12 @@ def generate_and_send_saga(target_chat_id=None):
             try:
                 bot.send_message(chat_id, f"{random.choice(START_PHRASES)}\n\n{src}\nТема: {topic}")
                 
-                # Вызываем нашу новую безопасную функцию отправки фото
-                download_and_send(chat_id, ai_url, fallback_url)
+                if img_data:
+                    photo = io.BytesIO(img_data)
+                    photo.name = 'saga.jpg'
+                    bot.send_photo(chat_id, photo)
+                else:
+                    bot.send_message(chat_id, "*(Картинка потерялась в тумане, но сага осталась...)*", parse_mode="Markdown")
                 
                 with open(fname, 'rb') as a: bot.send_voice(chat_id, a)
                 bot.send_chat_action(chat_id, 'typing')
@@ -232,16 +220,23 @@ def generate_and_send_rune(target_chat_id=None):
         rune_name_eng = rune.split('(')[1].split(')')[0]
         
         img_prompt = f"magic glowing rune stone {rune_name_eng} viking cinematic 8k"
-        ai_url = get_ai_image_url(img_prompt)
+        ai_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(img_prompt)}?width=1024&height=1024&nologo=true&seed={random.randint(1, 100000)}"
         fallback_url = RUNE_FALLBACKS[rune]
+        
+        # Запускаем загрузку через хаб
+        img_data = download_image_via_hub(ai_url, fallback_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers
         for user_id in targets:
             try:
                 if not target_chat_id: bot.send_message(user_id, "🌅 Солнце встало. Твоя Руна Дня:")
 
-                # Вызываем нашу новую безопасную функцию отправки фото
-                download_and_send(user_id, ai_url, fallback_url, caption=f"*{rune}*")
+                if img_data:
+                    photo = io.BytesIO(img_data)
+                    photo.name = 'rune.jpg'
+                    bot.send_photo(user_id, photo, caption=f"*{rune}*", parse_mode="Markdown")
+                else:
+                    bot.send_message(user_id, f"*(Изображение утеряно в веках)*\n*{rune}*", parse_mode="Markdown")
                     
                 bot.send_message(user_id, f"👁️ *Толкование:*\n\n{prediction}", parse_mode="Markdown")
             except Exception as e:

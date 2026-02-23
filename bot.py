@@ -20,7 +20,7 @@ YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 LEONARDO_API_KEY = os.environ.get("LEONARDO_API_KEY") # ДОБАВЛЕН КЛЮЧ LEONARDO
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
-START_DATE = datetime(2026, 2, 8) 
+START_DATE = datetime(2026, 2, 24)  # Завтрашняя дата для старта с 1-й темы
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
@@ -65,6 +65,7 @@ RUNE_FALLBACKS = {
     "Дагаз (Dagaz) - Прорыв": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Dagaz"
 }
 RUNES = list(RUNE_FALLBACKS.keys())
+generated_extra_topics = [] # <-- ДОБАВИТЬ ВОТ ЭТУ СТРОКУ
 
 subscribers = set()
 if YOUR_CHAT_ID: subscribers.add(YOUR_CHAT_ID)
@@ -87,8 +88,8 @@ SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай
 
 # --- ФУНКЦИИ ---
 def clean_text(text):
-    # Оставляем минимальную очистку, чтобы не оставлять мусорных символов
-    return text.replace("**", "").replace("#", "")
+    # Мягкая очистка от случайных звездочек и решеток
+    return text.replace("**", "").replace("__", "").replace("##", "").replace("#", "").replace("*", "")
 
 def smart_split_and_send(chat_id, text):
     chunk_size = 4000
@@ -107,8 +108,47 @@ async def generate_voice_file(text, filename):
     await communicate.save(filename)
 
 def get_topic():
+    global generated_extra_topics
+    try:
+        # Открываем твой файл с темами (topics.txt)
+        with open('topics.txt', 'r', encoding='utf-8') as f:
+            file_topics = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        print(f"❌ Ошибка чтения файла topics.txt: {e}")
+        file_topics = []
+
     day_index = (datetime.now() - START_DATE).days
-    return model.generate_content(SYSTEM_PROMPT_TOPIC_GEN).text.strip(), "🔮 Руны AI"
+
+    # СЦЕНАРИЙ А: Темы в файле еще есть
+    if file_topics and day_index < len(file_topics):
+        topic = file_topics[day_index]
+        return topic, "📜 Древние Свитки"
+        
+    # СЦЕНАРИЙ Б: Темы в файле закончились, генерируем УНИКАЛЬНУЮ новую
+    else:
+        print("⏳ Темы в файле закончились, придумываю новую уникальную...", flush=True)
+        
+        # Собираем ВСЕ темы, которые уже были (из файла + сгенерированные ранее)
+        all_used_topics = file_topics + generated_extra_topics
+        
+        # Превращаем их в текст для промпта
+        used_str = ", ".join(all_used_topics)
+        
+        # Промпт с жестким ограничением на повторы
+        prompt = f"Ты знаток скандинавской мифологии. Придумай ОДНУ редкую тему скандинавского фольклора для саги. Только заголовок (без кавычек и точек). СТРОГОЕ ПРАВИЛО: Тема НЕ ДОЛЖНА быть похожа ни на одну из этих: {used_str}"
+        
+        try:
+            new_topic = model.generate_content(prompt).text.strip()
+            new_topic = new_topic.replace('"', '').replace('.', '') # Убираем мусор
+            
+            # Запоминаем эту тему в памяти бота, чтобы завтра он её не повторил
+            if new_topic not in generated_extra_topics:
+                generated_extra_topics.append(new_topic)
+                
+            return new_topic, "🔮 Руны AI (Новая Сага)"
+        except Exception as e:
+            print(f"❌ Ошибка генерации новой темы: {e}")
+            return "Забытые боги Севера", "🔮 Запасная тема"
 
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)

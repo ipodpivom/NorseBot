@@ -17,10 +17,10 @@ from datetime import datetime
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
-LEONARDO_API_KEY = os.environ.get("LEONARDO_API_KEY") # ДОБАВЛЕН КЛЮЧ LEONARDO
+LEONARDO_API_KEY = os.environ.get("LEONARDO_API_KEY")
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
-START_DATE = datetime(2026, 2, 8)  # Завтрашняя дата для старта с 1-й темы
+START_DATE = datetime(2026, 2, 24)  # Завтрашняя дата для старта с 1-й темы
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
@@ -65,7 +65,7 @@ RUNE_FALLBACKS = {
     "Дагаз (Dagaz) - Прорыв": "https://placehold.co/800x800/1e293b/fbbf24.png?text=Dagaz"
 }
 RUNES = list(RUNE_FALLBACKS.keys())
-generated_extra_topics = [] # <-- ДОБАВИТЬ ВОТ ЭТУ СТРОКУ
+generated_extra_topics = [] # Память для новых тем (антиплагиат)
 
 subscribers = set()
 if YOUR_CHAT_ID: subscribers.add(YOUR_CHAT_ID)
@@ -76,11 +76,15 @@ START_PHRASES = ["⚔️ Руны легли верно!", "⚡ Тор удар�
 RUNE_ACTION_PHRASES = ["🎲 Кости брошены на шкуру медведя...", "✋ Рука Одина тянется...", "🌑 Камни шепчут во тьме..."]
 
 # --- ПРОМПТЫ ---
-SYSTEM_PROMPT_TOPIC_GEN = "Ты знаток мифов. Придумай одну редкую тему скандинавского фольклора. Только заголовок."
-SYSTEM_PROMPT_TEXT = """Ты — древний скальд. Напиши МОНУМЕНТАЛЬНЫЙ лонгрид (объем 8000-9000 знаков). 
-СТРОГОЕ ПРАВИЛО ОФОРМЛЕНИЯ: 
-- Запрещено использовать символы Markdown (никаких #, **, *).
-- Заголовки пиши только ЗАГЛАВНЫМИ БУКВАМИ и нумеруй их (например: 1. ЭТИМОЛОГИЯ, 2. МИФ, 3. СИМВОЛИЗМ). 
+SYSTEM_PROMPT_TEXT = """Ты — древний скальд. Напиши эпичную, атмосферную сагу (объем 8500 - 9000 знаков).
+СТРОГИЕ ПРАВИЛА ОФОРМЛЕНИЯ:
+1. НИКАКИХ служебных приписок в конце (не пиши количество символов!).
+2. Текст должен быть разбит на короткие, удобные для чтения абзацы. Делай отступы (пустые строки) между смысловыми блоками.
+3. Вступление пиши обычным текстом (не капсом!), атмосферно и загадочно.
+4. Структура: Вступление -> 1. ЭТИМОЛОГИЯ -> 2. МИФ -> 3. СИМВОЛИЗМ. Заголовки разделов пиши ЗАГЛАВНЫМИ буквами с нумерацией.
+5. Для перечислений используй обычный дефис "- ".
+6. Цитаты богов/героев выделяй кавычками и пиши с новой строки.
+7. Не используй символы разметки Markdown (*, #, _, **).
 Тема: """
 SYSTEM_PROMPT_VOICE = "Напиши атмосферное вступление (2-3 предложения) от лица старого викинга. На русском."
 SYSTEM_PROMPT_ORACLE = "Ты — Один. Ответь мудро, кратко (4 предл.). СТРОГО НА РУССКОМ. Вопрос: "
@@ -88,7 +92,7 @@ SYSTEM_PROMPT_RUNE = "Ты — Шаман. Выпала Руна: {rune}. Дай
 
 # --- ФУНКЦИИ ---
 def clean_text(text):
-    # Мягкая очистка от случайных звездочек и решеток
+    # Мягкая очистка: убираем случайные остатки разметки, если ИИ вдруг ошибется
     return text.replace("**", "").replace("__", "").replace("##", "").replace("#", "").replace("*", "")
 
 def smart_split_and_send(chat_id, text):
@@ -110,7 +114,6 @@ async def generate_voice_file(text, filename):
 def get_topic():
     global generated_extra_topics
     try:
-        # Открываем твой файл с темами (topics.txt)
         with open('topics.txt', 'r', encoding='utf-8') as f:
             file_topics = [line.strip() for line in f if line.strip()]
     except Exception as e:
@@ -119,32 +122,19 @@ def get_topic():
 
     day_index = (datetime.now() - START_DATE).days
 
-    # СЦЕНАРИЙ А: Темы в файле еще есть
-    if file_topics and day_index < len(file_topics):
+    if file_topics and day_index >= 0 and day_index < len(file_topics):
         topic = file_topics[day_index]
         return topic, "📜 Древние Свитки"
-        
-    # СЦЕНАРИЙ Б: Темы в файле закончились, генерируем УНИКАЛЬНУЮ новую
     else:
         print("⏳ Темы в файле закончились, придумываю новую уникальную...", flush=True)
-        
-        # Собираем ВСЕ темы, которые уже были (из файла + сгенерированные ранее)
         all_used_topics = file_topics + generated_extra_topics
-        
-        # Превращаем их в текст для промпта
         used_str = ", ".join(all_used_topics)
         
-        # Промпт с жестким ограничением на повторы
-        prompt = f"Ты знаток скандинавской мифологии. Придумай ОДНУ редкую тему скандинавского фольклора для саги. Только заголовок (без кавычек и точек). СТРОГОЕ ПРАВИЛО: Тема НЕ ДОЛЖНА быть похожа ни на одну из этих: {used_str}"
-        
+        prompt = f"Ты знаток мифов. Придумай ОДНУ редкую тему скандинавского фольклора. Только заголовок. Тема НЕ ДОЛЖНА быть похожа на эти: {used_str}"
         try:
-            new_topic = model.generate_content(prompt).text.strip()
-            new_topic = new_topic.replace('"', '').replace('.', '') # Убираем мусор
-            
-            # Запоминаем эту тему в памяти бота, чтобы завтра он её не повторил
+            new_topic = model.generate_content(prompt).text.strip().replace('"', '').replace('.', '')
             if new_topic not in generated_extra_topics:
                 generated_extra_topics.append(new_topic)
-                
             return new_topic, "🔮 Руны AI (Новая Сага)"
         except Exception as e:
             print(f"❌ Ошибка генерации новой темы: {e}")
@@ -155,11 +145,9 @@ def get_main_keyboard():
     markup.add(types.KeyboardButton("📜 Расскажи Сагу"), types.KeyboardButton("ᛟ Вытянуть Руну"), types.KeyboardButton("🔮 Спросить Одина"))
     return markup
 
-# 🔥 ОБНОВЛЕННАЯ ФУНКЦИЯ ПОЛУЧЕНИЯ КАРТИНКИ (Leonardo.ai API)
 def get_ai_image_bytes(prompt, fallback_url):
     headers_req = {'User-Agent': 'Mozilla/5.0'}
     
-    # План А: Leonardo.ai API
     try:
         print("⏳ Шаг 1: Запрашиваю нейросеть через Leonardo.ai API...", flush=True)
         if not LEONARDO_API_KEY:
@@ -172,24 +160,17 @@ def get_ai_image_bytes(prompt, fallback_url):
             "authorization": f"Bearer {LEONARDO_API_KEY}"
         }
         
-        payload = {
-            "height": 512,
-            "width": 512,
-            "prompt": prompt,
-            "num_images": 1
-        }
+        payload = {"height": 512, "width": 512, "prompt": prompt, "num_images": 1}
         
-        # 1. Запрос на генерацию
         resp_gen = requests.post(url_generate, json=payload, headers=headers_leo, timeout=15)
         resp_gen.raise_for_status()
         generation_id = resp_gen.json().get("sdGenerationJob", {}).get("generationId")
         
         if generation_id:
-             print("⏳ Шаг 2: Картинка рисуется, ожидаю результат (около 10-15 сек)...", flush=True)
+             print("⏳ Шаг 2: Картинка рисуется, ожидаю результат...", flush=True)
              url_get = f"https://cloud.leonardo.ai/api/rest/v1/generations/{generation_id}"
              
-             # 2. Опрашиваем сервер о готовности
-             for _ in range(10): # 10 попыток с паузой
+             for _ in range(10): 
                  time.sleep(2)
                  res = requests.get(url_get, headers=headers_leo, timeout=10)
                  if res.status_code == 200:
@@ -197,14 +178,11 @@ def get_ai_image_bytes(prompt, fallback_url):
                      status = data.get("generations_by_pk", {}).get("status")
                      if status == "COMPLETE":
                          img_url = data["generations_by_pk"]["generated_images"][0]["url"]
-                         print("✅ Leonardo сгенерировал ссылку! Качаю...", flush=True)
-                         
-                         # 3. Скачиваем саму картинку в память
                          img_resp = requests.get(img_url, headers=headers_req, timeout=20)
                          if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                              print("✅ ИИ-картинка от Leonardo успешно скачана в память!", flush=True)
+                              print("✅ ИИ-картинка от Leonardo успешно скачана!", flush=True)
                               return img_resp.content
-                         break # Выходим из цикла, если картинка готова, но не скачалась
+                         break 
              else:
                  print("⚠️ Превышено время ожидания готовности от Leonardo.", flush=True)
         else:
@@ -213,7 +191,6 @@ def get_ai_image_bytes(prompt, fallback_url):
     except Exception as e:
         print(f"⚠️ План А (Leonardo) провалился: {e}", flush=True)
 
-    # План Б: Наша стильная заглушка (Graceful Degradation)
     try:
         print("⏳ Шаг 3: Качаю резервную картинку...", flush=True)
         resp = requests.get(fallback_url, headers=headers_req, timeout=10)
@@ -221,7 +198,7 @@ def get_ai_image_bytes(prompt, fallback_url):
             print("✅ Резервная картинка скачана!", flush=True)
             return resp.content
     except Exception as e:
-        print(f"❌ Полный провал всех скачиваний (даже резерва): {e}", flush=True)
+        print(f"❌ Полный провал всех скачиваний: {e}", flush=True)
         
     return None
 
@@ -236,8 +213,6 @@ def generate_and_send_saga(target_chat_id=None):
             img_p = "epic viking norse mythology cinematic"
             
         fallback_url = f"https://placehold.co/800x800/1e293b/fbbf24.png?text=Viking+Saga"
-        
-        # Запускаем загрузку картинки
         img_bytes = get_ai_image_bytes(img_p, fallback_url)
 
         v_text = clean_text(model.generate_content(f"{SYSTEM_PROMPT_VOICE} {topic}").text)
@@ -279,8 +254,6 @@ def generate_and_send_rune(target_chat_id=None):
         
         img_prompt = f"close up glowing magic rune stone {rune_name_eng} lying on dark earth, viking cinematic lighting 8k"
         fallback_url = RUNE_FALLBACKS[rune]
-        
-        # Запускаем загрузку картинки
         img_bytes = get_ai_image_bytes(img_prompt, fallback_url)
         
         targets = [target_chat_id] if target_chat_id else subscribers

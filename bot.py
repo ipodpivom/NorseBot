@@ -20,7 +20,7 @@ YOUR_CHAT_ID = os.environ.get("YOUR_CHAT_ID")
 LEONARDO_API_KEY = os.environ.get("LEONARDO_API_KEY")
 
 # --- НАСТРОЙКИ ВРЕМЕНИ (UTC) ---
-START_DATE = datetime(2026, 2, 24)  # Завтрашняя дата для старта с 1-й темы
+START_DATE = datetime(2026, 2, 10)  # Завтрашняя дата для старта с 1-й темы
 TIME_RUNE_UTC = 4  # 6:00 Киев
 TIME_SAGA_UTC = 7  # 9:00 Киев
 
